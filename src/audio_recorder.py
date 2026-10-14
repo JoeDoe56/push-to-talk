@@ -9,6 +9,8 @@ from src.audio_runtime import (
     terminate_audio_interface,
     initialize_audio_thread,
     release_audio_thread,
+    register_audio_recorder,
+    audio_device_access,
 )
 
 
@@ -52,6 +54,7 @@ class AudioRecorder:
         self._init_thread = threading.Thread(
             target=self._initialize_audio_interface, daemon=True
         )
+        register_audio_recorder(self)
         self._init_thread.start()
 
     def _initialize_audio_interface(self):
@@ -72,7 +75,32 @@ class AudioRecorder:
     def start_recording(self) -> bool:
         """Start recording audio."""
         with self._stream_lock:
-            return self._start_recording()
+            # Do not hold PortAudio's lifecycle lock while its initialization
+            # thread needs that same lock to finish.
+            if self._init_thread and self._init_thread.is_alive():
+                self._init_thread.join(timeout=5.0)
+                if self._init_thread.is_alive():
+                    logger.error("Audio initialization has not finished")
+                    return False
+            with audio_device_access():
+                return self._start_recording()
+
+    def release_idle_interface(self):
+        """Let output recovery refresh the shared device list only when idle."""
+        if not self._stream_lock.acquire(blocking=False):
+            return False
+        try:
+            if self.is_recording or self.stream is not None:
+                return False
+            if self._init_thread and self._init_thread.is_alive():
+                return False
+            if self.audio_interface is not None:
+                terminate_audio_interface(self.audio_interface)
+                self.audio_interface = None
+            self._init_error = None
+            return True
+        finally:
+            self._stream_lock.release()
 
     def _start_recording(self) -> bool:
         initialize_audio_thread()
@@ -95,8 +123,11 @@ class AudioRecorder:
                 return False
 
             if not self.audio_interface:
-                logger.error("Audio interface not initialized")
-                return False
+                try:
+                    self.audio_interface = create_audio_interface()
+                except Exception as error:
+                    logger.error(f"Audio interface could not reopen: {error}")
+                    return False
 
         try:
             # Refresh cached endpoints after an unplugged microphone made Windows
@@ -106,41 +137,20 @@ class AudioRecorder:
                 self.audio_interface = create_audio_interface()
                 self._refresh_devices = False
             try:
-                input_info = self.audio_interface.get_default_input_device_info()
+                input_info = self._select_input_device()
             except OSError:
                 terminate_audio_interface(self.audio_interface)
                 self.audio_interface = create_audio_interface()
-                input_info = self.audio_interface.get_default_input_device_info()
+                input_info = self._select_input_device()
             if "stereo mix" in str(input_info.get("name", "")).lower():
                 terminate_audio_interface(self.audio_interface)
                 self.audio_interface = create_audio_interface()
-                input_info = self.audio_interface.get_default_input_device_info()
+                input_info = self._select_input_device()
                 if "stereo mix" in str(input_info.get("name", "")).lower():
                     raise RuntimeError(
                         "Windows selected Stereo Mix instead of a microphone. Reconnect your microphone and select it as the default input."
                     )
             input_device = input_info.get("index")
-            self._capture_rate = self.sample_rate
-            self._capture_channels = self.channels
-            if hasattr(pyaudio, "paWASAPI"):
-                try:
-                    native_device = int(
-                        self.audio_interface.get_host_api_info_by_type(
-                            pyaudio.paWASAPI
-                        )["defaultInputDevice"]
-                    )
-                    if native_device < 0:
-                        raise OSError("No default WASAPI microphone")
-                    input_info = self.audio_interface.get_device_info_by_index(
-                        native_device
-                    )
-                    if "stereo mix" in str(input_info.get("name", "")).lower():
-                        raise OSError("Default WASAPI input is loopback")
-                    input_device = native_device
-                    self._capture_rate = int(input_info["defaultSampleRate"])
-                    self._capture_channels = min(2, int(input_info["maxInputChannels"]))
-                except (OSError, ValueError):
-                    pass
             logger.info(
                 f"Recording input: {input_info.get('name', 'system default')} ({self._capture_rate} Hz, {self._capture_channels} channel(s))"
             )
@@ -169,6 +179,31 @@ class AudioRecorder:
             self.is_recording = False
             self._cleanup_stream()
             return False
+
+    def _select_input_device(self):
+        self._capture_rate = self.sample_rate
+        self._capture_channels = self.channels
+        if hasattr(pyaudio, "paWASAPI"):
+            try:
+                device = int(
+                    self.audio_interface.get_host_api_info_by_type(pyaudio.paWASAPI)[
+                        "defaultInputDevice"
+                    ]
+                )
+                if device < 0:
+                    raise OSError("No default WASAPI microphone")
+                info = dict(self.audio_interface.get_device_info_by_index(device))
+                if int(info["maxInputChannels"]) < 1:
+                    raise OSError("The default device has no microphone channels")
+                self._capture_rate = int(info["defaultSampleRate"])
+                self._capture_channels = min(2, int(info["maxInputChannels"]))
+                info["index"] = device
+                return info
+            except (OSError, ValueError):
+                pass
+        # Consult the older default only if native WASAPI is unavailable. Its
+        # default can still be Stereo Mix while WASAPI already sees the glasses.
+        return self.audio_interface.get_default_input_device_info()
 
     def stop_recording(self) -> Optional[str]:
         with self._stream_lock:

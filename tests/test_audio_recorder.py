@@ -136,6 +136,17 @@ class TestAudioRecorder:
 
         logger.info("Start recording already recording test passed")
 
+    def test_endpoint_refresh_defers_while_recording_then_reopens_idle_input(self):
+        assert self.recorder.start_recording()
+        assert self.recorder.release_idle_interface() is False
+        self.mock_audio_interface.terminate.assert_not_called()
+        self.recorder.stop_recording()
+        assert self.recorder.release_idle_interface() is True
+        self.mock_audio_interface.terminate.assert_called_once()
+        assert self.recorder.audio_interface is None
+        assert self.recorder.start_recording()
+        assert self.recorder.audio_interface is self.mock_audio_interface
+
     def test_start_recording_failure(self, mocker):
         """Test recording start failure"""
         logger.info("Testing recording start failure")
@@ -324,6 +335,25 @@ class TestAudioRecorder:
             assert recorded.getframerate() == 48000
             assert recorded.getnchannels() == 2
             assert recorded.getnframes() == 1024
+
+    def test_native_microphone_is_used_when_legacy_default_is_still_stereo_mix(self):
+        self.mock_audio_interface.get_default_input_device_info.return_value = {
+            "name": "Stereo Mix (Realtek Audio)"
+        }
+        self.mock_audio_interface.get_host_api_info_by_type.side_effect = None
+        self.mock_audio_interface.get_host_api_info_by_type.return_value = {
+            "defaultInputDevice": 7
+        }
+        self.mock_audio_interface.get_device_info_by_index.return_value = {
+            "name": "XREAL microphone",
+            "defaultSampleRate": 48000,
+            "maxInputChannels": 2,
+        }
+        assert self.recorder.start_recording()
+        self.mock_audio_interface.get_default_input_device_info.assert_not_called()
+        assert (
+            self.mock_audio_interface.open.call_args.kwargs["input_device_index"] == 7
+        )
 
     def test_destructor_cleanup(self, mocker):
         """Test that destructor calls cleanup"""

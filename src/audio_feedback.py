@@ -3,6 +3,7 @@
 from array import array
 from collections import deque
 import threading
+import time
 import wave
 
 import pyaudio
@@ -11,6 +12,8 @@ from src.audio_runtime import (
     create_audio_interface,
     terminate_audio_interface,
     release_audio_thread,
+    reopen_audio_interface,
+    default_audio_endpoints,
 )
 
 
@@ -27,6 +30,7 @@ class AudioFeedbackPlayer:
         self.closed = threading.Event()
         self.channels = 2
         self.underruns = 0
+        self.last_callback = 0.0
         self.thread = threading.Thread(
             target=self._run, daemon=True, name="AudioFeedback"
         )
@@ -50,10 +54,40 @@ class AudioFeedbackPlayer:
         return output.tobytes()
 
     def _run(self):
+        recovering = False
+        try:
+            while not self.closed.is_set():
+                retry_delay = 0.25
+                try:
+                    self._run_stream(recovering)
+                except Exception as error:
+                    previous_error = self.error
+                    self.error = error
+                    if not self.started.is_set():
+                        self.started.set()
+                        logger.error(
+                            f"Windows feedback output could not start: {error}"
+                        )
+                        return
+                    if previous_error is None or str(previous_error) != str(error):
+                        logger.warning(f"Feedback output will reconnect: {error}")
+                    retry_delay = 1.0
+                recovering = True
+                if self.closed.wait(retry_delay):
+                    break
+        finally:
+            release_audio_thread()
+
+    def _run_stream(self, recovering):
         interface = None
         stream = None
         try:
-            interface = create_audio_interface()
+            interface = (
+                reopen_audio_interface() if recovering else create_audio_interface()
+            )
+            if interface is None:
+                return  # A capture is active; retry after it has finished.
+            endpoints = default_audio_endpoints()
             try:
                 device = interface.get_host_api_info_by_type(pyaudio.paWASAPI)[
                     "defaultOutputDevice"
@@ -70,6 +104,7 @@ class AudioFeedbackPlayer:
             self.sounds = {
                 str(path): self._load_sound(path, rate) for path in self.paths
             }
+            self.last_callback = time.monotonic()
             stream = interface.open(
                 format=pyaudio.paInt16,
                 channels=self.channels,
@@ -84,24 +119,39 @@ class AudioFeedbackPlayer:
             )
             self.ready.set()
             self.started.set()
-            self.closed.wait()
-        except Exception as error:
-            self.error = error
-            self.started.set()
-            logger.error(f"Windows feedback output could not start: {error}")
+            self.error = None
+            while not self.closed.wait(0.25):
+                if self._stream_needs_reopen(stream, endpoints):
+                    break
         finally:
             self.ready.clear()
+            with self.lock:
+                # A device transition must not replay old cues on the new device.
+                self.pending.clear()
+                self.remaining = b""
             if stream is not None:
                 try:
                     stream.stop_stream()
+                except Exception as error:
+                    logger.warning(f"Feedback output stop failed: {error}")
+                try:
                     stream.close()
                 except Exception as error:
-                    logger.warning(f"Feedback output cleanup failed: {error}")
+                    logger.warning(f"Feedback output close failed: {error}")
             if interface is not None:
                 terminate_audio_interface(interface)
-            release_audio_thread()
+
+    def _stream_needs_reopen(self, stream, endpoints):
+        if default_audio_endpoints() != endpoints:
+            logger.info("Windows audio endpoint changed; refreshing chime output")
+            return True
+        if not stream.is_active() or time.monotonic() - self.last_callback > 2:
+            logger.warning("Chime output stopped responding; reopening the stream")
+            return True
+        return False
 
     def _callback(self, input_data, frame_count, time_info, status_flags):
+        self.last_callback = time.monotonic()
         if self.closed.is_set():
             return b"\x00" * frame_count * self.channels * 2, pyaudio.paComplete
         if status_flags & pyaudio.paOutputUnderflow:
@@ -121,12 +171,11 @@ class AudioFeedbackPlayer:
         return bytes(output), pyaudio.paContinue
 
     def play(self, path):
-        sound = self.sounds.get(str(path))
-        if not self.ready.is_set() or not sound:
-            return False
         with self.lock:
-            if len(self.pending) < 4:
-                self.pending.append(sound)
+            sound = self.sounds.get(str(path))
+            if not self.ready.is_set() or not sound or len(self.pending) >= 4:
+                return False
+            self.pending.append(sound)
         if self.underruns:
             logger.warning(
                 f"Audio feedback output reported {self.underruns} underrun(s)"

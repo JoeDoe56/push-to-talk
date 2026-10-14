@@ -44,7 +44,7 @@ def _play_feedback(path):
             initialize_audio_feedback()
         if not _feedback_player.play(path):
             raise RuntimeError(
-                "Windows chime output is unavailable. Reconnect the output device and restart the application."
+                "Windows chime output is reconnecting or unavailable. Check the Windows output device."
             )
     else:
         playsound(str(path), block=False)

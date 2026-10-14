@@ -11,7 +11,9 @@ def test_windows_feedback_reports_unavailable_output(monkeypatch):
     player = MagicMock()
     player.play.return_value = False
     monkeypatch.setattr(utils, "_feedback_player", player)
-    with pytest.raises(RuntimeError, match="Windows chime output is unavailable"):
+    with pytest.raises(
+        RuntimeError, match="Windows chime output is reconnecting or unavailable"
+    ):
         utils._play_feedback(Path("chime.wav"))
 
 
@@ -88,6 +90,110 @@ def test_feedback_resampling_preserves_channels_and_duration():
     samples = array("h", stereo)
     assert samples[0::2] == samples[1::2]
     assert max(abs(sample) for sample in samples) < 32767
+
+
+def test_feedback_detects_stopped_stalled_and_changed_output(monkeypatch):
+    from src import audio_feedback
+    import time
+
+    player = audio_feedback.AudioFeedbackPlayer.__new__(
+        audio_feedback.AudioFeedbackPlayer
+    )
+    player.last_callback = time.monotonic()
+    stream = MagicMock()
+    stream.is_active.return_value = True
+    endpoints = ("speakers", "microphone")
+    monkeypatch.setattr(audio_feedback, "default_audio_endpoints", lambda: endpoints)
+    assert not player._stream_needs_reopen(stream, endpoints)
+    stream.is_active.return_value = False
+    assert player._stream_needs_reopen(stream, endpoints)
+    stream.is_active.return_value = True
+    player.last_callback -= 3
+    assert player._stream_needs_reopen(stream, endpoints)
+    player.last_callback = time.monotonic()
+    assert player._stream_needs_reopen(stream, ("old-output", "microphone"))
+
+
+def test_feedback_reopens_and_closes_previous_output_on_endpoint_change(monkeypatch):
+    from src import audio_feedback
+    import threading
+
+    interfaces = [MagicMock(), MagicMock()]
+    for interface in interfaces:
+        interface.get_host_api_info_by_type.return_value = {"defaultOutputDevice": 0}
+        interface.get_device_info_by_index.return_value = {
+            "defaultSampleRate": 48000,
+            "maxOutputChannels": 2,
+            "name": "Speakers",
+        }
+    monkeypatch.setattr(audio_feedback, "create_audio_interface", lambda: interfaces[0])
+    monkeypatch.setattr(audio_feedback, "reopen_audio_interface", lambda: interfaces[1])
+    monkeypatch.setattr(
+        audio_feedback,
+        "terminate_audio_interface",
+        lambda interface: interface.terminate(),
+    )
+    monkeypatch.setattr(
+        audio_feedback, "default_audio_endpoints", lambda: ("new", "mic")
+    )
+    monkeypatch.setattr(
+        audio_feedback.AudioFeedbackPlayer, "_load_sound", lambda *args: b"\x01\x00"
+    )
+    reopened = threading.Event()
+
+    def monitor(player, stream, endpoints):
+        if stream is interfaces[1].open.return_value:
+            reopened.set()
+            player.closed.set()
+        return True
+
+    monkeypatch.setattr(
+        audio_feedback.AudioFeedbackPlayer, "_stream_needs_reopen", monitor
+    )
+    player = audio_feedback.AudioFeedbackPlayer([Path("chime.wav")])
+    try:
+        assert reopened.wait(3)
+    finally:
+        player.close()
+    for interface in interfaces:
+        interface.open.return_value.close.assert_called_once()
+        interface.terminate.assert_called_once()
+
+
+def test_feedback_keeps_retrying_through_unplug_usb_and_dp_transitions(monkeypatch):
+    from src import audio_feedback
+    from collections import deque
+    import threading
+
+    player = audio_feedback.AudioFeedbackPlayer.__new__(
+        audio_feedback.AudioFeedbackPlayer
+    )
+    player.closed = threading.Event()
+    player.started = threading.Event()
+    player.started.set()  # Output worked before the glasses were unplugged.
+    player.error = None
+    attempts = deque(["old DP", "unplugged", "USB", "unplugged", "new DP"])
+    seen = []
+
+    def output(recovering):
+        route = attempts.popleft()
+        seen.append((route, recovering))
+        if route == "unplugged":
+            raise OSError("No output device")
+        if route == "new DP":
+            player.closed.set()
+
+    monkeypatch.setattr(player, "_run_stream", output)
+    monkeypatch.setattr(audio_feedback, "release_audio_thread", lambda: None)
+    player._run()
+    assert [route for route, _ in seen] == [
+        "old DP",
+        "unplugged",
+        "USB",
+        "unplugged",
+        "new DP",
+    ]
+    assert all(recovering for _, recovering in seen[1:])
 
 
 @pytest.fixture
