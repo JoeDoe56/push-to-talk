@@ -10,12 +10,15 @@ import os
 import argparse
 import platform
 import ctypes
+import faulthandler
 import tkinter as tk
 from tkinter import messagebox
 from loguru import logger
 
 from src.push_to_talk import PushToTalkConfig
 from src.gui import show_configuration_gui
+
+_crash_log = None
 
 
 def setup_logging(debug_mode: bool = False):
@@ -27,6 +30,14 @@ def setup_logging(debug_mode: bool = False):
     """
     # Remove default handler
     logger.remove()
+
+    # Preserve Python thread stacks if a native audio driver aborts the process.
+    global _crash_log
+    try:
+        _crash_log = open("push_to_talk_crash.log", "a", encoding="utf-8")
+        faulthandler.enable(file=_crash_log, all_threads=True)
+    except OSError:
+        pass
 
     if debug_mode:
         # Add console handler with detailed format for debugging

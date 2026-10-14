@@ -1,11 +1,8 @@
 import pytest
-import threading
 from loguru import logger
 from unittest.mock import MagicMock
-import time
 
 from src.audio_recorder import AudioRecorder
-from src.exceptions import AudioRecordingError
 
 
 class TestAudioRecorder:
@@ -78,7 +75,12 @@ class TestAudioRecorder:
         assert self.recorder.is_recording is True
         assert self.recorder.audio_interface == self.mock_audio_interface
         assert self.recorder.stream == mock_stream
-        assert isinstance(self.recorder.recording_thread, threading.Thread)
+        assert self.recorder.recording_thread is None
+        assert (
+            self.mock_audio_interface.open.call_args.kwargs["stream_callback"]
+            == self.recorder._audio_callback
+        )
+        mock_stream.start_stream.assert_called_once()
 
         self.mock_audio_interface.open.assert_called_once()
         logger.info("Start recording success test passed")
@@ -223,25 +225,40 @@ class TestAudioRecorder:
         mock_stream.stop_stream.assert_called_once()
         logger.info("Cleanup with exception test passed")
 
-    def test_record_audio_thread(self, mocker):
-        """Test the recording thread functionality"""
-        logger.info("Testing recording thread functionality")
+    def test_audio_callback_stops_before_stream_is_closed(self, mocker):
+        """Capture callbacks must finish without reading a closed native stream."""
+        import pyaudio
 
-        mock_stream = MagicMock()
-        mock_stream.read.side_effect = [b"chunk1", b"chunk2", Exception("Stream ended")]
-        self.mock_audio_interface.open.return_value = mock_stream
-
-        # Start recording
         self.recorder.start_recording()
-        self.recorder.is_recording = True
+        assert self.recorder._audio_callback(b"chunk1", 1, {}, 0) == (
+            None,
+            pyaudio.paContinue,
+        )
+        self.recorder.is_recording = False
+        assert self.recorder._audio_callback(b"late chunk", 1, {}, 0) == (
+            None,
+            pyaudio.paComplete,
+        )
+        assert self.recorder.audio_data == [b"chunk1"]
+        self.recorder._cleanup_stream()
+        self.mock_audio_interface.open.return_value.read.assert_not_called()
 
-        # Run the recording method directly
-        self.recorder._record_audio()
+    def test_refresh_endpoints_when_windows_falls_back_to_stereo_mix(self):
+        self.mock_audio_interface.get_default_input_device_info.side_effect = [
+            {"name": "Stereo Mix (Realtek Audio)"},
+            {"name": "Microphone (XREAL One Pro)"},
+        ]
+        assert self.recorder.start_recording() is True
+        self.mock_audio_interface.terminate.assert_called_once()
+        assert self.mock_audio_interface.get_default_input_device_info.call_count == 2
 
-        # Should have stopped recording due to exception
+    def test_missing_microphone_does_not_record_loopback_audio(self):
+        self.mock_audio_interface.get_default_input_device_info.return_value = {
+            "name": "Stereo Mix (Realtek Audio)"
+        }
+        assert self.recorder.start_recording() is False
+        self.mock_audio_interface.open.assert_not_called()
         assert self.recorder.is_recording is False
-
-        logger.info("Record audio thread test passed")
 
     def test_destructor_cleanup(self, mocker):
         """Test that destructor calls cleanup"""

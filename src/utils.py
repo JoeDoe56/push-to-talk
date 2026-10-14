@@ -1,5 +1,6 @@
 import os
 import wave
+import sys
 from loguru import logger
 from pathlib import Path
 from playsound3 import playsound
@@ -13,12 +14,28 @@ _START_SOUND_PATH = _ASSETS_DIR / "start_feedback.wav"
 _STOP_SOUND_PATH = _ASSETS_DIR / "stop_feedback.wav"
 
 
+def _play_feedback(path):
+    if sys.platform == "win32":
+        import winsound
+
+        # Use Windows' native asynchronous WAV player for these short chimes.
+        winsound.PlaySound(
+            str(path),
+            winsound.SND_FILENAME
+            | winsound.SND_ASYNC
+            | winsound.SND_NODEFAULT
+            | getattr(winsound, "SND_SYSTEM", 0x00200000),
+        )
+    else:
+        playsound(str(path), block=False)
+
+
 def play_start_feedback():
-    """Play a high-pitched beep for recording start."""
+    """Play the rising two-note recording-start chime."""
 
     try:
         if _START_SOUND_PATH.exists():
-            playsound(str(_START_SOUND_PATH), block=False)
+            _play_feedback(_START_SOUND_PATH)
         else:
             logger.warning(f"Start feedback audio file not found: {_START_SOUND_PATH}")
     except Exception as e:
@@ -26,11 +43,11 @@ def play_start_feedback():
 
 
 def play_stop_feedback():
-    """Play a lower-pitched confirmation beep for recording stop."""
+    """Play the falling two-note recording-stop chime."""
 
     try:
         if _STOP_SOUND_PATH.exists():
-            playsound(str(_STOP_SOUND_PATH), block=False)
+            _play_feedback(_STOP_SOUND_PATH)
         else:
             logger.warning(f"Stop feedback audio file not found: {_STOP_SOUND_PATH}")
     except Exception as e:

@@ -5,9 +5,6 @@ import tempfile
 from typing import Optional
 from loguru import logger
 
-from src.config.constants import AUDIO_RECORDING_THREAD_TIMEOUT_SECONDS
-from src.exceptions import AudioRecordingError
-
 
 class AudioRecorder:
     def __init__(
@@ -38,15 +35,24 @@ class AudioRecorder:
         self.audio_interface = None
         self.stream = None
         self._init_error: Optional[Exception] = None
+        self._stream_lock = threading.RLock()
+        self._shutting_down = False
+        self._refresh_devices = False
 
         # Initialize PyAudio in a background thread to avoid blocking startup
-        self._init_thread = threading.Thread(target=self._initialize_audio_interface, daemon=True)
+        self._init_thread = threading.Thread(
+            target=self._initialize_audio_interface, daemon=True
+        )
         self._init_thread.start()
 
     def _initialize_audio_interface(self):
         """Initialize PyAudio interface in background."""
         try:
-            self.audio_interface = pyaudio.PyAudio()
+            interface = pyaudio.PyAudio()
+            if self._shutting_down:
+                interface.terminate()
+                return
+            self.audio_interface = interface
             logger.debug("PyAudio initialized successfully in background")
         except Exception as e:
             self._init_error = e
@@ -54,6 +60,12 @@ class AudioRecorder:
 
     def start_recording(self) -> bool:
         """Start recording audio."""
+        with self._stream_lock:
+            return self._start_recording()
+
+    def _start_recording(self) -> bool:
+        if self._shutting_down:
+            return False
         if self.is_recording:
             logger.warning("Recording is already in progress")
             return False
@@ -65,7 +77,9 @@ class AudioRecorder:
                 self._init_thread.join(timeout=5.0)
 
             if self._init_error:
-                logger.error(f"Cannot start recording, initialization failed: {self._init_error}")
+                logger.error(
+                    f"Cannot start recording, initialization failed: {self._init_error}"
+                )
                 return False
 
             if not self.audio_interface:
@@ -73,29 +87,55 @@ class AudioRecorder:
                 return False
 
         try:
+            # Refresh cached endpoints after an unplugged microphone made Windows
+            # fall back to loopback capture. Never silently dictate desktop audio.
+            if self._refresh_devices:
+                self.audio_interface.terminate()
+                self.audio_interface = pyaudio.PyAudio()
+                self._refresh_devices = False
+            try:
+                input_info = self.audio_interface.get_default_input_device_info()
+            except OSError:
+                self.audio_interface.terminate()
+                self.audio_interface = pyaudio.PyAudio()
+                input_info = self.audio_interface.get_default_input_device_info()
+            if "stereo mix" in str(input_info.get("name", "")).lower():
+                self.audio_interface.terminate()
+                self.audio_interface = pyaudio.PyAudio()
+                input_info = self.audio_interface.get_default_input_device_info()
+                if "stereo mix" in str(input_info.get("name", "")).lower():
+                    raise RuntimeError(
+                        "Windows selected Stereo Mix instead of a microphone. Reconnect your microphone and select it as the default input."
+                    )
+            logger.info(f"Recording input: {input_info.get('name', 'system default')}")
+            self.audio_data = []
+            self.is_recording = True
             self.stream = self.audio_interface.open(
                 format=self.audio_format,
                 channels=self.channels,
                 rate=self.sample_rate,
                 input=True,
                 frames_per_buffer=self.chunk_size,
+                stream_callback=self._audio_callback,
+                start=False,
             )
-
-            self.is_recording = True
-            self.audio_data = []
-
-            self.recording_thread = threading.Thread(target=self._record_audio)
-            self.recording_thread.start()
+            self.stream.start_stream()
 
             logger.info("Audio recording started")
             return True
 
         except Exception as e:
             logger.error(f"Failed to start recording: {e}")
+            self._refresh_devices = True
+            self.is_recording = False
             self._cleanup_stream()
             return False
 
     def stop_recording(self) -> Optional[str]:
+        with self._stream_lock:
+            return self._stop_recording()
+
+    def _stop_recording(self) -> Optional[str]:
         """
         Stop recording and save audio to a temporary file.
 
@@ -107,10 +147,6 @@ class AudioRecorder:
             return None
 
         self.is_recording = False
-
-        # Wait for recording thread to finish
-        if self.recording_thread:
-            self.recording_thread.join(timeout=AUDIO_RECORDING_THREAD_TIMEOUT_SECONDS)
 
         # Get sample width before cleanup
         sample_width = None
@@ -158,35 +194,40 @@ class AudioRecorder:
             logger.error(f"Failed to save audio: {e}")
             return None
 
-    def _record_audio(self):
-        """Internal method to record audio in a separate thread."""
-        try:
-            while self.is_recording and self.stream:
-                data = self.stream.read(self.chunk_size, exception_on_overflow=False)
-                if isinstance(data, (bytes, bytearray)):
-                    self.audio_data.append(data)
-                else:  # pragma: no cover - defensive guard for mocked objects
-                    logger.debug(
-                        "Skipping non-bytes audio chunk during recording: %s",
-                        type(data).__name__,
-                    )
-        except Exception as e:
-            logger.error(f"Error during recording: {e}")
-            self.is_recording = False
+    def _audio_callback(self, input_data, frame_count, time_info, status_flags):
+        """Collect callback buffers without a blocking read on another thread.
+
+        Returning paComplete ends capture before the worker stops and closes the
+        stream. No PortAudio control methods are called from this callback.
+        """
+        if not self.is_recording:
+            return None, pyaudio.paComplete
+        if isinstance(input_data, (bytes, bytearray)):
+            self.audio_data.append(input_data)
+        return None, pyaudio.paContinue
 
     def _cleanup_stream(self):
         """Clean up audio stream resources."""
-        try:
+        with self._stream_lock:
+            self.is_recording = False
             if self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-                self.stream = None
-
-        except Exception as e:
-            logger.error(f"Error during stream cleanup: {e}")
+                stream, self.stream = self.stream, None
+                try:
+                    stream.stop_stream()
+                except Exception as e:
+                    logger.warning(f"Error stopping audio stream: {e}")
+                try:
+                    stream.close()
+                except Exception as e:
+                    logger.error(f"Error closing audio stream: {e}")
 
     def shutdown(self):
         """Terminate audio interface."""
+        self._shutting_down = True
+        with self._stream_lock:
+            self._shutdown()
+
+    def _shutdown(self):
         self._cleanup_stream()
 
         # Ensure init thread is done if we are shutting down

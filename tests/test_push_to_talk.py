@@ -543,7 +543,8 @@ def test_on_start_recording_failure(make_app, dependency_stubs, feedback_spy):
     process_queue(app)
 
     assert recorder.start_calls == 1
-    assert feedback_spy["start"] == 1
+    assert feedback_spy["start"] == 0
+    assert app.hotkey_service.is_recording is False
 
 
 def test_get_status_reports_state(make_app, dependency_stubs):

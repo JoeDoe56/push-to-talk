@@ -19,6 +19,7 @@ wheels/
 
 # Application files
 push_to_talk.log
+push_to_talk_crash.log
 push_to_talk_config.json
 
 # Claude

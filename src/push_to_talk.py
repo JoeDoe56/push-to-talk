@@ -603,12 +603,15 @@ class PushToTalkApp:
 
     def _do_start_recording(self):
         """Internal method to perform start recording actions."""
-        # Play audio feedback if enabled
-        if self.config.enable_audio_feedback:
-            play_start_feedback()
-
         if not self.audio_recorder.start_recording():
             logger.error("Failed to start audio recording")
+            self.hotkey_service.is_recording = False
+            return
+
+        # Signal that the microphone is actually ready, rather than beeping
+        # before stream initialization succeeds.
+        if self.config.enable_audio_feedback:
+            play_start_feedback()
 
     def _do_stop_recording(self):
         """Internal method to perform stop recording actions."""

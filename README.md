@@ -27,6 +27,11 @@ To develop or rebuild this fork, run `uv sync --locked`, then
 `uv run --locked pytest tests` and `build_script\build.bat` from the repository.
 The executable is generated in `dist` and excluded from Git.
 
+Recording feedback uses original rising/falling two-note chimes inspired by
+classic voice-assistant sounds. On Windows these play through the native
+system-notification audio session, controlled by **System Sounds** in the volume
+mixer. They are recreated tones, not extracted Apple recordings.
+
 See [OpenRouter's speech-to-text documentation](https://openrouter.ai/docs/guides/overview/multimodal/stt)
 and [GPT Transcribe on OpenRouter](https://openrouter.ai/openai/gpt-transcribe).
 
