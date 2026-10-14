@@ -14,6 +14,9 @@ class TextRefinerOpenAI(TextRefinerBase):
         api_key: Optional[str] = None,
         model: str = "gpt-4.1-nano",
         base_url: Optional[str] = None,
+        *,
+        provider_name: str = "OpenAI",
+        key_environment: str = "OPENAI_API_KEY",
     ):
         """
         Initialize the text refiner with OpenAI API.
@@ -28,10 +31,11 @@ class TextRefinerOpenAI(TextRefinerBase):
         """
         super().__init__()
 
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.provider_name = provider_name
+        self.api_key = api_key or os.getenv(key_environment)
         if not self.api_key:
             raise ConfigurationError(
-                "OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass api_key parameter."
+                f"{provider_name} API key is required. Set {key_environment} environment variable or pass api_key parameter."
             )
 
         self.model = model
@@ -109,10 +113,10 @@ class TextRefinerOpenAI(TextRefinerBase):
             return refined_text
 
         except OpenAIAPIError as e:
-            logger.error(f"OpenAI API error during text refinement: {e}")
+            logger.error(f"{self.provider_name} API error during text refinement: {e}")
             raise APIError(
-                f"OpenAI refinement API failed: {e}",
-                provider="OpenAI",
+                f"{self.provider_name} refinement API failed: {e}",
+                provider=self.provider_name,
                 status_code=getattr(e, "status_code", None),
             ) from e
         except Exception as e:

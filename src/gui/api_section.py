@@ -3,8 +3,10 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable
+from src.config.constants import OPENROUTER_STT_MODELS, OPENROUTER_REFINEMENT_MODELS
 from src.gui.validators import (
     validate_openai_api_key,
+    validate_openrouter_api_key,
     validate_deepgram_api_key,
     validate_cerebras_api_key,
     validate_gemini_api_key,
@@ -35,6 +37,7 @@ class APISection:
         # Configuration variables
         self.stt_provider_var = tk.StringVar()
         self.openai_api_key_var = tk.StringVar()
+        self.openrouter_api_key_var = tk.StringVar()
         self.deepgram_api_key_var = tk.StringVar()
         self.cerebras_api_key_var = tk.StringVar()
         self.gemini_api_key_var = tk.StringVar()
@@ -45,6 +48,7 @@ class APISection:
 
         # Provider-specific widgets
         self.openai_widgets = {}
+        self.openrouter_widgets = {}
         self.deepgram_widgets = {}
         self.cerebras_widgets = {}
         self.gemini_widgets = {}
@@ -54,10 +58,12 @@ class APISection:
 
         # Provider-specific model selections (to preserve when switching)
         self.openai_stt_model = "gpt-4o-mini-transcribe"
+        self.openrouter_stt_model = "openai/gpt-transcribe"
         self.deepgram_stt_model = "nova-3"
 
         # Provider-specific refinement model selections
         self.openai_refinement_model = "gpt-4.1-nano"
+        self.openrouter_refinement_model = OPENROUTER_REFINEMENT_MODELS[0]
         self.cerebras_refinement_model = "llama-3.3-70b"
         self.gemini_refinement_model = "gemini-3-flash-preview"
         self.custom_refinement_model = "llama3"
@@ -67,10 +73,41 @@ class APISection:
     def _create_widgets(self):
         """Create the API section widgets."""
         # === API Keys Section ===
+        self.openrouter_widgets["frame"] = ttk.Frame(self.api_keys_frame)
+        self.openrouter_widgets["frame"].grid(
+            row=0, column=0, columnspan=4, sticky="ew", pady=5
+        )
+        ttk.Label(self.openrouter_widgets["frame"], text="OpenRouter API Key:").grid(
+            row=0, column=0, sticky="w", pady=2
+        )
+        openrouter_entry = ttk.Entry(
+            self.openrouter_widgets["frame"],
+            textvariable=self.openrouter_api_key_var,
+            show="*",
+            width=50,
+        )
+        openrouter_entry.grid(
+            row=0, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=2
+        )
+
+        def toggle_openrouter_key_visibility():
+            visible = openrouter_entry["show"] == "*"
+            openrouter_entry["show"] = "" if visible else "*"
+            openrouter_show_hide_btn["text"] = "Hide" if visible else "Show"
+
+        openrouter_show_hide_btn = ttk.Button(
+            self.openrouter_widgets["frame"],
+            text="Show",
+            command=toggle_openrouter_key_visibility,
+            width=8,
+        )
+        openrouter_show_hide_btn.grid(row=0, column=3, padx=(5, 0), pady=2)
+        self.openrouter_widgets["frame"].columnconfigure(1, weight=1)
+
         # OpenAI API Key Frame
         self.openai_widgets["frame"] = ttk.Frame(self.api_keys_frame)
         self.openai_widgets["frame"].grid(
-            row=0, column=0, columnspan=4, sticky="ew", pady=5
+            row=1, column=0, columnspan=4, sticky="ew", pady=5
         )
 
         ttk.Label(self.openai_widgets["frame"], text="OpenAI API Key:").grid(
@@ -107,7 +144,7 @@ class APISection:
         # Deepgram API Key Frame
         self.deepgram_widgets["frame"] = ttk.Frame(self.api_keys_frame)
         self.deepgram_widgets["frame"].grid(
-            row=1, column=0, columnspan=4, sticky="ew", pady=5
+            row=2, column=0, columnspan=4, sticky="ew", pady=5
         )
 
         ttk.Label(self.deepgram_widgets["frame"], text="Deepgram API Key:").grid(
@@ -144,7 +181,7 @@ class APISection:
         # Cerebras API Key Frame
         self.cerebras_widgets["frame"] = ttk.Frame(self.api_keys_frame)
         self.cerebras_widgets["frame"].grid(
-            row=2, column=0, columnspan=4, sticky="ew", pady=5
+            row=3, column=0, columnspan=4, sticky="ew", pady=5
         )
 
         ttk.Label(self.cerebras_widgets["frame"], text="Cerebras API Key:").grid(
@@ -181,7 +218,7 @@ class APISection:
         # Google Gemini API Key Frame
         self.gemini_widgets["frame"] = ttk.Frame(self.api_keys_frame)
         self.gemini_widgets["frame"].grid(
-            row=3, column=0, columnspan=4, sticky="ew", pady=5
+            row=4, column=0, columnspan=4, sticky="ew", pady=5
         )
 
         ttk.Label(self.gemini_widgets["frame"], text="Gemini API Key:").grid(
@@ -218,7 +255,7 @@ class APISection:
         # Custom API Key Frame
         self.custom_widgets["frame"] = ttk.Frame(self.api_keys_frame)
         self.custom_widgets["frame"].grid(
-            row=4, column=0, columnspan=4, sticky="ew", pady=5
+            row=5, column=0, columnspan=4, sticky="ew", pady=5
         )
 
         ttk.Label(self.custom_widgets["frame"], text="Custom API Key:").grid(
@@ -260,9 +297,9 @@ class APISection:
         stt_provider_combo = ttk.Combobox(
             self.frame,
             textvariable=self.stt_provider_var,
-            values=["openai", "deepgram"],
+            values=["openrouter", "openai", "deepgram"],
             state="readonly",
-            width=20,
+            width=30,
         )
         stt_provider_combo.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=2)
         stt_provider_combo.bind("<<ComboboxSelected>>", self._on_provider_changed)
@@ -275,8 +312,8 @@ class APISection:
             self.frame,
             textvariable=self.stt_model_var,
             values=["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
-            state="readonly",
-            width=20,
+            state="normal",  # Allow provider-qualified models beyond the suggestions.
+            width=35,
         )
         self.stt_model_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
         self.stt_model_combo.bind("<<ComboboxSelected>>", self._on_stt_model_changed)
@@ -288,7 +325,7 @@ class APISection:
         refinement_provider_combo = ttk.Combobox(
             self.frame,
             textvariable=self.refinement_provider_var,
-            values=["openai", "cerebras", "gemini", "custom"],
+            values=["openrouter", "openai", "cerebras", "gemini", "custom"],
             state="readonly",
             width=20,
         )
@@ -372,6 +409,8 @@ class APISection:
         # Save the model selection to the appropriate provider-specific variable
         if provider_value == "openai":
             self.openai_stt_model = current_model
+        elif provider_value == "openrouter":
+            self.openrouter_stt_model = current_model
         elif provider_value == "deepgram":
             self.deepgram_stt_model = current_model
 
@@ -398,6 +437,8 @@ class APISection:
         # Save the model selection to the appropriate provider-specific variable
         if provider_value == "openai":
             self.openai_refinement_model = current_model
+        elif provider_value == "openrouter":
+            self.openrouter_refinement_model = current_model
         elif provider_value == "cerebras":
             self.cerebras_refinement_model = current_model
         elif provider_value == "gemini":
@@ -415,12 +456,15 @@ class APISection:
 
         # Define model lists
         openai_models = ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"]
+        openrouter_models = OPENROUTER_STT_MODELS
         deepgram_models = ["nova-3", "nova-2", "base", "enhanced", "whisper-medium"]
 
         # Save the current model to the appropriate provider-specific variable
         # This preserves the selection before we change providers
         if current_model in openai_models:
             self.openai_stt_model = current_model
+        elif current_model in openrouter_models or "/" in current_model:
+            self.openrouter_stt_model = current_model
         elif current_model in deepgram_models:
             self.deepgram_stt_model = current_model
 
@@ -432,6 +476,9 @@ class APISection:
                 self.stt_model_var.set(self.openai_stt_model)
             else:
                 self.stt_model_var.set(models[0])
+        elif provider_value == "openrouter":
+            models = openrouter_models
+            self.stt_model_var.set(self.openrouter_stt_model or models[0])
         elif provider_value == "deepgram":
             models = deepgram_models
             # Restore the previously selected Deepgram model
@@ -492,6 +539,8 @@ class APISection:
             self.gemini_refinement_model = current_model
         elif current_model in custom_models:
             self.custom_refinement_model = current_model
+        elif "/" in current_model:
+            self.openrouter_refinement_model = current_model
 
         # Update model options and restore provider-specific selection
         if provider_value == "openai":
@@ -501,6 +550,9 @@ class APISection:
                 self.refinement_model_var.set(self.openai_refinement_model)
             else:
                 self.refinement_model_var.set(models[0])
+        elif provider_value == "openrouter":
+            models = OPENROUTER_REFINEMENT_MODELS
+            self.refinement_model_var.set(self.openrouter_refinement_model or models[0])
         elif provider_value == "cerebras":
             models = cerebras_models
             # Restore the previously selected Cerebras model
@@ -537,6 +589,7 @@ class APISection:
         return {
             "stt_provider": self.stt_provider_var.get(),
             "openai_api_key": self.openai_api_key_var.get().strip(),
+            "openrouter_api_key": self.openrouter_api_key_var.get().strip(),
             "deepgram_api_key": self.deepgram_api_key_var.get().strip(),
             "cerebras_api_key": self.cerebras_api_key_var.get().strip(),
             "gemini_api_key": self.gemini_api_key_var.get().strip(),
@@ -559,6 +612,7 @@ class APISection:
         refinement_provider: str,
         refinement_model: str,
         custom_endpoint: str = "",
+        openrouter_api_key: str = "",
     ):
         """
         Set the API configuration values.
@@ -581,6 +635,7 @@ class APISection:
         """
         # Set API keys
         self.openai_api_key_var.set(openai_api_key)
+        self.openrouter_api_key_var.set(openrouter_api_key)
         self.deepgram_api_key_var.set(deepgram_api_key)
         self.cerebras_api_key_var.set(cerebras_api_key)
         self.gemini_api_key_var.set(gemini_api_key)
@@ -591,11 +646,15 @@ class APISection:
         # This ensures the update methods will use these values
         if stt_provider == "openai":
             self.openai_stt_model = stt_model
+        elif stt_provider == "openrouter":
+            self.openrouter_stt_model = stt_model
         elif stt_provider == "deepgram":
             self.deepgram_stt_model = stt_model
 
         if refinement_provider == "openai":
             self.openai_refinement_model = refinement_model
+        elif refinement_provider == "openrouter":
+            self.openrouter_refinement_model = refinement_model
         elif refinement_provider == "cerebras":
             self.cerebras_refinement_model = refinement_model
         elif refinement_provider == "gemini":
@@ -625,6 +684,8 @@ class APISection:
             provider = self.stt_provider_var.get()
             if provider == "openai":
                 models = ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"]
+            elif provider == "openrouter":
+                models = OPENROUTER_STT_MODELS
             elif provider == "deepgram":
                 models = ["nova-3", "nova-2", "base", "enhanced", "whisper-medium"]
             else:
@@ -645,6 +706,8 @@ class APISection:
                     "gpt-4o-mini",
                     "gpt-4o",
                 ]
+            elif provider == "openrouter":
+                models = OPENROUTER_REFINEMENT_MODELS
             elif provider == "cerebras":
                 models = [
                     "llama-3.3-70b",
@@ -679,6 +742,26 @@ class APISection:
         """
         values = self.get_values()
         status_lines = ["API Key Validation Status:\n"]
+
+        openrouter_status = "Not configured"
+        openrouter_prefix = "[ ]"
+        if values["openrouter_api_key"]:
+            try:
+                validate_openrouter_api_key(values["openrouter_api_key"])
+                openrouter_status, openrouter_prefix = "VALID", "[OK]"
+            except Exception as exc:
+                openrouter_status, openrouter_prefix = str(exc), "[X]"
+        selected_marker = (
+            " (Selected STT/refinement provider)"
+            if "openrouter" in (values["stt_provider"], values["refinement_provider"])
+            else ""
+        )
+        status_lines.append(f"\n{openrouter_prefix} OpenRouter{selected_marker}:")
+        status_lines.append(f"  Status: {openrouter_status}")
+        if values["stt_provider"] == "openrouter" and openrouter_prefix == "[X]":
+            status_lines.append(
+                "OpenRouter credentials need to be corrected before starting dictation."
+            )
 
         # Test OpenAI
         openai_status = "Not configured"

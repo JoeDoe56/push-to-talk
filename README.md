@@ -5,6 +5,31 @@
 
 # PushToTalk - AI Refined Speech-to-Text Dictation
 
+## OpenRouter support in this fork
+
+OpenRouter is available as a speech-to-text and optional text-refinement provider.
+Select `openrouter`, paste your key into **OpenRouter API Key**, and choose a
+provider-qualified model such as `openai/gpt-transcribe`. The same key works for
+both stages. You can also supply `OPENROUTER_API_KEY` in the process environment;
+OpenRouter never falls back to an OpenAI key. Model fields accept custom slugs.
+
+For transcription, the fork uses OpenRouter's `/api/v1/audio/transcriptions`
+endpoint with an OpenAI-compatible multipart upload and `response_format=json`.
+OpenRouter's multipart endpoint ignores the glossary `prompt` parameter, so it
+is omitted. Glossary-based optional text refinement remains available.
+
+Run **Start PushToTalk.cmd** to launch the built executable, or the project's
+Python environment when running from source. API keys belong in the local
+`push_to_talk_config.json`, which is excluded from Git, or in environment variables.
+Keep personal keys out of tracked source and example configuration.
+
+To develop or rebuild this fork, run `uv sync --locked`, then
+`uv run --locked pytest tests` and `build_script\build.bat` from the repository.
+The executable is generated in `dist` and excluded from Git.
+
+See [OpenRouter's speech-to-text documentation](https://openrouter.ai/docs/guides/overview/multimodal/stt)
+and [GPT Transcribe on OpenRouter](https://openrouter.ai/openai/gpt-transcribe).
+
 ![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)
 ![License](https://img.shields.io/github/license/yixin0829/push-to-talk)
 ![Version](https://img.shields.io/github/v/release/yixin0829/push-to-talk)
@@ -36,8 +61,8 @@ A Python application that provides push-to-talk speech-to-text functionality wit
 - **🎯 GUI Interface**: Integrated configuration control and application status monitoring in one window
 - **🔄 Live Config Sync**: GUI edits instantly push updates to the running background service—no restart required
 - **📚 Custom Glossary**: Add domain-specific terms and acronyms to improve transcription accuracy
-- **✨ Multi-Provider Text Refinement**: Improves transcription quality using OpenAI GPT, Cerebras, Gemini, or custom OpenAI-compatible endpoints
-- **🤖 Multi-Provider Speech-to-Text**: Choose between OpenAI Whisper or Deepgram for accurate transcription
+- **✨ Multi-Provider Text Refinement**: Improves transcription quality using OpenRouter, OpenAI GPT, Cerebras, Gemini, or custom OpenAI-compatible endpoints
+- **🤖 Multi-Provider Speech-to-Text**: Choose OpenRouter, OpenAI, or Deepgram for accurate transcription
 - **🎤 Push-to-Talk Recording**: Hold a customizable hotkey to record audio (platform-aware defaults)
 - **📝 Auto Text Insertion**: Automatically inserts refined text into the active window
 
@@ -201,12 +226,12 @@ The application supports both GUI and file-based configuration with automatic en
 ### API Key Management
 The application supports three ways to provide API keys (checked in this order):
 1. **GUI**: Enter API keys directly in the configuration interface (stored in `push_to_talk_config.json`)
-2. **Environment Variables**: Set `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `CEREBRAS_API_KEY`, or `GOOGLE_API_KEY`
+2. **Environment Variables**: Set `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `CEREBRAS_API_KEY`, or `GOOGLE_API_KEY`
 3. **Configuration File**: Manually edit `push_to_talk_config.json`
 
 The required API key depends on your selected providers:
-- **STT Provider**: OpenAI requires `openai_api_key`, Deepgram requires `deepgram_api_key`
-- **Refinement Provider**: OpenAI requires `openai_api_key`, Cerebras requires `cerebras_api_key`, Gemini requires `gemini_api_key`, Custom requires `custom_api_key`
+- **STT Provider**: OpenRouter requires `openrouter_api_key`, OpenAI requires `openai_api_key`, Deepgram requires `deepgram_api_key`
+- **Refinement Provider**: OpenRouter requires `openrouter_api_key`, OpenAI requires `openai_api_key`, Cerebras requires `cerebras_api_key`, Gemini requires `gemini_api_key`, Custom requires `custom_api_key`
 
 Environment variables are checked automatically if GUI or config file values are empty.
 

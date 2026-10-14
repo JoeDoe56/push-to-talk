@@ -71,7 +71,9 @@ class ConfigurationWindow:
         """Create and return the main GUI window."""
         self.root = tk.Tk()
         self.root.title("PushToTalk Configuration")
-        self.root.geometry("950x1200")
+        width = min(950, self.root.winfo_screenwidth() - 100)
+        height = min(1000, self.root.winfo_screenheight() - 140)
+        self.root.geometry(f"{width}x{height}")
         self.root.resizable(True, True)
 
         # Configure icon if available
@@ -233,6 +235,7 @@ Configure your settings below, then click "Start Application" to begin:"""
                     [
                         self.api_section.stt_provider_var,
                         self.api_section.openai_api_key_var,
+                        self.api_section.openrouter_api_key_var,
                         self.api_section.deepgram_api_key_var,
                         self.api_section.cerebras_api_key_var,
                         self.api_section.gemini_api_key_var,
@@ -338,6 +341,7 @@ Configure your settings below, then click "Start Application" to begin:"""
         return PushToTalkConfig(
             stt_provider=api_values["stt_provider"],
             openai_api_key=api_values["openai_api_key"],
+            openrouter_api_key=api_values.get("openrouter_api_key", ""),
             deepgram_api_key=api_values["deepgram_api_key"],
             cerebras_api_key=api_values["cerebras_api_key"],
             gemini_api_key=api_values["gemini_api_key"],
@@ -371,6 +375,7 @@ Configure your settings below, then click "Start Application" to begin:"""
                 config.refinement_provider,
                 config.refinement_model,
                 config.custom_endpoint,
+                openrouter_api_key=config.openrouter_api_key,
             )
             self.hotkey_section.set_values(config.hotkey, config.toggle_hotkey)
             self.feature_flags_section.set_values(

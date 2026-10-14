@@ -1,6 +1,7 @@
 from typing import Optional
 from src.text_refiner_base import TextRefinerBase
 from src.text_refiner_openai import TextRefinerOpenAI
+from src.text_refiner_openrouter import OpenRouterTextRefiner
 from src.text_refiner_cerebras import CerebrasTextRefiner
 from src.text_refiner_gemini import GeminiTextRefiner
 
@@ -20,7 +21,7 @@ class TextRefinerFactory:
         Create a text refiner instance based on the specified provider.
 
         Args:
-            provider: The refinement provider ('openai', 'cerebras', or 'gemini')
+            provider: Refinement provider ('openai', 'openrouter', 'cerebras', 'gemini', or 'custom')
             api_key: API key for the provider
             model: Model name to use for refinement
             glossary: Optional list of custom glossary terms
@@ -34,6 +35,8 @@ class TextRefinerFactory:
         """
         if provider == "openai":
             refiner = TextRefinerOpenAI(api_key=api_key, model=model, base_url=base_url)
+        elif provider == "openrouter":
+            refiner = OpenRouterTextRefiner(api_key=api_key, model=model)
         elif provider == "cerebras":
             refiner = CerebrasTextRefiner(api_key=api_key, model=model)
         elif provider == "gemini":
@@ -43,7 +46,7 @@ class TextRefinerFactory:
         else:
             raise ValueError(
                 f"Unsupported refinement provider: {provider}. "
-                f"Supported providers: openai, cerebras, gemini, custom"
+                f"Supported providers: openai, openrouter, cerebras, gemini, custom"
             )
 
         # Set glossary if provided

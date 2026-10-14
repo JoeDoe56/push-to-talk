@@ -10,19 +10,37 @@ from src.exceptions import TranscriptionError, APIError
 
 
 class OpenAITranscriber(TranscriberBase):
-    def __init__(self, api_key: Optional[str] = None, model: str = "whisper-1"):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "whisper-1",
+        *,
+        base_url: Optional[str] = None,
+        provider_name: str = "OpenAI",
+        response_format: str = "text",
+        key_environment: str = "OPENAI_API_KEY",
+    ):
         """
         Initialize the transcriber with OpenAI API.
 
         Args:
             api_key: OpenAI API key. If None, will use OPENAI_API_KEY environment variable
             model: STT Model to use (default: whisper-1)
+            base_url: Optional OpenAI-compatible endpoint; fixed for the OpenRouter provider
+            provider_name: Provider label for credential validation and errors
+            response_format: OpenAI text or OpenRouter JSON transcription response
+            key_environment: Provider-specific environment variable for a missing key
         """
-        api_key = api_key or os.getenv("OPENAI_API_KEY")
-        super().__init__(api_key, "OpenAI")
+        api_key = api_key or os.getenv(key_environment)
+        super().__init__(api_key, provider_name)
 
         self.model = model
-        self.client = OpenAI(api_key=self.api_key)
+        self.provider_name = provider_name
+        self.response_format = response_format
+        if base_url:
+            self.client = OpenAI(api_key=self.api_key, base_url=base_url, timeout=30.0)
+        else:
+            self.client = OpenAI(api_key=self.api_key)
 
     def transcribe_audio(
         self, audio_file_path: str, language: Optional[str] = None
@@ -53,13 +71,17 @@ class OpenAITranscriber(TranscriberBase):
             prompt = ", ".join(self.glossary) if self.glossary else None
 
             with open(audio_file_path, "rb") as audio_file:
-                response = self.client.audio.transcriptions.create(
-                    model=self.model,
-                    file=audio_file,
-                    language=language,
-                    response_format="text",
-                    prompt=prompt,
-                )
+                request = {
+                    "model": self.model,
+                    "file": audio_file,
+                    "language": language,
+                    "response_format": self.response_format,
+                }
+                # OpenRouter accepts multipart uploads, but rejects the legacy
+                # 'text' format and ignores the OpenAI glossary prompt field.
+                if self.provider_name != "OpenRouter":
+                    request["prompt"] = prompt
+                response = self.client.audio.transcriptions.create(**request)
 
             # Handle both string and object responses
             if hasattr(response, "text"):
@@ -82,10 +104,10 @@ class OpenAITranscriber(TranscriberBase):
             return transcribed_text if transcribed_text else None
 
         except OpenAIAPIError as e:
-            logger.error(f"OpenAI API error during transcription: {e}")
+            logger.error(f"{self.provider_name} API error during transcription: {e}")
             raise APIError(
-                f"OpenAI transcription API failed: {e}",
-                provider="OpenAI",
+                f"{self.provider_name} transcription API failed: {e}",
+                provider=self.provider_name,
                 status_code=getattr(e, "status_code", None),
             ) from e
         except Exception as e:

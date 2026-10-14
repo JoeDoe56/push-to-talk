@@ -2,7 +2,9 @@
 
 import urllib.request
 import urllib.error
+import os
 from src.push_to_talk import PushToTalkConfig
+from src.config.constants import OPENROUTER_BASE_URL
 
 
 def validate_configuration(config: PushToTalkConfig) -> tuple[bool, str | None]:
@@ -23,6 +25,14 @@ def validate_configuration(config: PushToTalkConfig) -> tuple[bool, str | None]:
                 "OpenAI API key is required when using OpenAI provider!\n\n"
                 "Please enter your OpenAI API key or switch to Deepgram provider.",
             )
+    elif config.stt_provider == "openrouter":
+        if not (
+            config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
+        ).strip():
+            return (
+                False,
+                "Paste your OpenRouter API key into the OpenRouter API Key field.",
+            )
     elif config.stt_provider == "deepgram":
         if not config.deepgram_api_key.strip():
             return (
@@ -33,11 +43,39 @@ def validate_configuration(config: PushToTalkConfig) -> tuple[bool, str | None]:
     else:
         return False, f"Unknown provider: {config.stt_provider}"
 
+    if config.enable_text_refinement and config.refinement_provider == "openrouter":
+        if not (
+            config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
+        ).strip():
+            return (
+                False,
+                "OpenRouter text refinement needs the OpenRouter API Key field or OPENROUTER_API_KEY.",
+            )
+
     # Check hotkeys are different
     if config.hotkey == config.toggle_hotkey:
         return False, "Push-to-talk and toggle hotkeys must be different!"
 
     return True, None
+
+
+def validate_openrouter_api_key(api_key: str) -> bool:
+    """Validate OpenRouter credentials without sending audio or creating a paid generation."""
+    request = urllib.request.Request(
+        f"{OPENROUTER_BASE_URL}/key",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10):
+            return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise ValueError("INVALID - Incorrect OpenRouter API key") from exc
+        raise ValueError(f"OpenRouter returned HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise ValueError(
+            "Could not reach OpenRouter; check the network connection."
+        ) from exc
 
 
 def validate_openai_api_key(api_key: str) -> bool:

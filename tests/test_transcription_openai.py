@@ -5,6 +5,77 @@ from unittest.mock import MagicMock
 
 from src.transcription_openai import OpenAITranscriber
 from src.exceptions import ConfigurationError, TranscriptionError, APIError
+from src.transcriber_factory import TranscriberFactory
+
+
+class TestOpenRouterTranscriber:
+    def test_multipart_request_uses_openrouter_json_and_latest_model(
+        self, tmp_path, mocker
+    ):
+        import httpx
+        import wave
+        from openai import OpenAI
+
+        audio_path = tmp_path / "speech.wav"
+        with wave.open(str(audio_path), "wb") as recording:
+            recording.setnchannels(1)
+            recording.setsampwidth(2)
+            recording.setframerate(16000)
+            recording.writeframes(b"\x00\x00" * 16000)
+
+        requests_seen = []
+
+        def respond(request):
+            requests_seen.append(request)
+            assert (
+                str(request.url) == "https://openrouter.ai/api/v1/audio/transcriptions"
+            )
+            assert request.headers["authorization"] == "Bearer test-openrouter-key"
+            body = request.read()
+            assert b"openai/gpt-transcribe" in body
+            assert b'name="response_format"\r\n\r\njson' in body
+            assert b'name="file"; filename="speech.wav"' in body
+            assert b"RIFF" in body
+            assert b'name="prompt"' not in body
+            return httpx.Response(200, json={"text": " Test dictation. "})
+
+        transcriber = TranscriberFactory.create_transcriber(
+            "openrouter", "test-openrouter-key", "openai/gpt-transcribe", ["OpenRouter"]
+        )
+        assert str(transcriber.client.base_url) == "https://openrouter.ai/api/v1/"
+        transcriber.client.close()
+        with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+            transcriber.client = OpenAI(
+                api_key="test-openrouter-key",
+                base_url="https://openrouter.ai/api/v1",
+                http_client=client,
+            )
+            assert transcriber.transcribe_audio(str(audio_path)) == "Test dictation."
+        assert len(requests_seen) == 1
+
+    def test_key_environment_is_openrouter_not_openai(self, mocker):
+        mocker.patch.dict(
+            os.environ,
+            {
+                "OPENROUTER_API_KEY": "router-test-key",
+                "OPENAI_API_KEY": "different-key",
+            },
+        )
+        transcriber = TranscriberFactory.create_transcriber(
+            "openrouter", "", "openai/gpt-transcribe"
+        )
+        assert transcriber.api_key == "router-test-key"
+        assert transcriber.response_format == "json"
+        transcriber.client.close()
+
+    def test_missing_openrouter_key_fails_before_any_network_call(self, mocker):
+        mocker.patch.dict(os.environ, {}, clear=True)
+        client = mocker.patch("src.transcription_openai.OpenAI")
+        with pytest.raises(ConfigurationError, match="OpenRouter API key is required"):
+            TranscriberFactory.create_transcriber(
+                "openrouter", "", "openai/gpt-transcribe"
+            )
+        client.assert_not_called()
 
 
 class TestOpenAITranscriber:

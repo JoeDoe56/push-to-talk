@@ -46,6 +46,20 @@ between responsiveness and avoiding redundant updates.
 CONFIG_AUTOSAVE_FILENAME = "push_to_talk_config.json"
 """Default filename for configuration persistence."""
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+"""OpenRouter's OpenAI-compatible endpoint for transcription and refinement."""
+
+OPENROUTER_STT_MODELS = [
+    "openai/gpt-transcribe",
+    "openai/gpt-4o-transcribe",
+    "openai/gpt-4o-mini-transcribe",
+    "openai/whisper-1",
+]
+"""Suggested transcription models. OpenRouter requires provider-qualified slugs."""
+
+OPENROUTER_REFINEMENT_MODELS = ["openai/gpt-4.1-mini", "openai/gpt-4.1-nano"]
+"""Starter refinement models; other OpenRouter slugs can be entered in the GUI."""
+
 # GUI Dimensions
 WINDOW_MIN_WIDTH = 700
 """Minimum window width (in pixels).

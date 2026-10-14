@@ -1,14 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-block_cipher = None
+from pathlib import Path
+
+project_root = Path(SPECPATH).parent
 
 a = Analysis(
-    ['../main.py'],
-    pathex=[],
+    [str(project_root / 'main.py')],
+    pathex=[str(project_root)],
     binaries=[],
     datas=[
-        ('../src', 'src'),
-        ('../icon.ico', '.'),  # Include icon in data files
+        (str(project_root / 'src'), 'src'),
+        (str(project_root / 'icon.ico'), '.'),
     ],
     hiddenimports=[],
     hookspath=[],
@@ -17,17 +19,15 @@ a = Analysis(
     excludes=['email.test', 'http.test', 'xml.test', 'pydoc', 'doctest', 'tkinter.test'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
     [],
     name='PushToTalk',
@@ -42,5 +42,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='../icon.ico',  # Application icon
+    icon=str(project_root / 'icon.ico'),
 )

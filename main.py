@@ -104,10 +104,10 @@ def main():
 {str(e)}
 
 Common solutions:
-• Make sure your OpenAI API key is valid
+• Make sure your selected provider's API key is valid
 • Check that you have microphone permissions
 • Run as Administrator for hotkey detection
-• Ensure internet connectivity for OpenAI API
+• Ensure internet connectivity for your selected provider
 
 Check push_to_talk.log for detailed error information."""
 

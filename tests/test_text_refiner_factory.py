@@ -1,4 +1,6 @@
 import pytest
+import json
+import httpx
 import os
 from loguru import logger
 from unittest.mock import MagicMock
@@ -8,6 +10,64 @@ from src.text_refiner_openai import TextRefinerOpenAI
 from src.text_refiner_cerebras import CerebrasTextRefiner
 from src.text_refiner_gemini import GeminiTextRefiner
 from src.text_refiner_base import TextRefinerBase
+from src.exceptions import ConfigurationError
+
+
+def test_openrouter_refinement_request_and_key_isolation(monkeypatch):
+    from openai import OpenAI
+    from src.text_refiner_openrouter import OpenRouterTextRefiner
+
+    monkeypatch.setenv("OPENAI_API_KEY", "wrong-provider-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    refiner = TextRefinerFactory.create_refiner(
+        provider="openrouter", api_key="", model="openai/gpt-4.1-mini"
+    )
+    assert isinstance(refiner, OpenRouterTextRefiner)
+    assert refiner.api_key == "test-openrouter-key"
+
+    def handle_request(request):
+        assert str(request.url) == "https://openrouter.ai/api/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer test-openrouter-key"
+        body = json.loads(request.content)
+        assert body["model"] == "openai/gpt-4.1-mini"
+        assert "This is the dictated sentence" in body["messages"][1]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "id": "test-completion",
+                "object": "chat.completion",
+                "created": 0,
+                "model": body["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Refined sentence.",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
+        refiner.client = OpenAI(
+            api_key=refiner.api_key, base_url=refiner.base_url, http_client=client
+        )
+        assert (
+            refiner.refine_text("This is the dictated sentence that needs refinement.")
+            == "Refined sentence."
+        )
+
+
+def test_openrouter_refinement_requires_its_own_key(monkeypatch):
+    from src.text_refiner_openrouter import OpenRouterTextRefiner
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "wrong-provider-key")
+    with pytest.raises(ConfigurationError, match="OpenRouter API key is required"):
+        OpenRouterTextRefiner()
 
 
 class TestTextRefinerFactory:

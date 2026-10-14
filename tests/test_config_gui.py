@@ -355,3 +355,100 @@ def test_loaded_config_not_overwritten_during_initialization(
     assert saved_config["sample_rate"] == 16000
     assert saved_config["enable_text_refinement"] is False
     assert saved_config["enable_audio_feedback"] is False
+
+
+def test_openrouter_configuration_round_trip_and_validation(tmp_path, monkeypatch):
+    from src.push_to_talk import PushToTalkConfig
+    from src.gui.validators import validate_configuration
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    config = PushToTalkConfig(
+        stt_provider="openrouter",
+        stt_model="openai/gpt-transcribe",
+        hotkey="f13",
+        toggle_hotkey="ctrl+alt+space",
+        enable_text_refinement=False,
+    )
+    assert validate_configuration(config)[0] is False
+    config.openrouter_api_key = "test-openrouter-key"
+    path = tmp_path / "config.json"
+    config.save_to_file(str(path))
+    loaded = PushToTalkConfig.load_from_file(str(path))
+    assert loaded.openrouter_api_key == "test-openrouter-key"
+    assert loaded.stt_provider == "openrouter"
+    assert loaded.stt_model == "openai/gpt-transcribe"
+    assert validate_configuration(loaded) == (True, None)
+
+
+def test_openrouter_gui_preserves_key_and_model(mock_tk_root):
+    from src.gui.api_section import APISection
+
+    section = APISection(mock_tk_root)
+    section.set_values(
+        "openrouter",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "openai/gpt-transcribe",
+        "cerebras",
+        "llama-3.3-70b",
+        openrouter_api_key="test-openrouter-key",
+    )
+    assert section.get_values()["openrouter_api_key"] == "test-openrouter-key"
+    assert section.get_values()["stt_model"] == "openai/gpt-transcribe"
+    assert "openai/gpt-transcribe" in section.stt_model_combo["values"]
+    section.stt_provider_var.set("deepgram")
+    section._on_provider_changed()
+    section.stt_provider_var.set("openrouter")
+    section._on_provider_changed()
+    assert section.stt_model_var.get() == "openai/gpt-transcribe"
+
+
+def test_openrouter_gui_preserves_custom_models(mock_tk_root):
+    from src.gui.api_section import APISection
+
+    section = APISection(mock_tk_root)
+    section.set_values(
+        "openrouter",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "provider/custom-transcribe",
+        "openrouter",
+        "provider/custom-refiner",
+        openrouter_api_key="test-openrouter-key",
+    )
+    section.stt_provider_var.set("openai")
+    section._on_provider_changed()
+    section.stt_provider_var.set("openrouter")
+    section._on_provider_changed()
+    section.refinement_provider_var.set("cerebras")
+    section._on_refinement_provider_changed()
+    section.refinement_provider_var.set("openrouter")
+    section._on_refinement_provider_changed()
+    values = section.get_values()
+    assert values["stt_model"] == "provider/custom-transcribe"
+    assert values["refinement_model"] == "provider/custom-refiner"
+
+
+def test_openrouter_key_change_reinitializes_components():
+    config = PushToTalkConfig(
+        stt_provider="openrouter", openrouter_api_key="old-test-key"
+    )
+    updated = config.model_copy(update={"openrouter_api_key": "new-test-key"})
+    assert updated.requires_component_reinitialization(config)
+
+
+def test_openrouter_key_validation_uses_read_only_endpoint(mocker):
+    from src.gui.validators import validate_openrouter_api_key
+
+    request_mock = mocker.patch("urllib.request.urlopen")
+    assert validate_openrouter_api_key("test-openrouter-key") is True
+    request = request_mock.call_args[0][0]
+    assert request.full_url == "https://openrouter.ai/api/v1/key"
+    assert request.get_method() == "GET"
+    assert request.get_header("Authorization") == "Bearer test-openrouter-key"

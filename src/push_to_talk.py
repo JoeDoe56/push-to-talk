@@ -44,16 +44,18 @@ class PushToTalkConfig(BaseModel):
 
     # Transcription provider settings
     stt_provider: str = Field(
-        default="deepgram", description="STT provider: 'openai' or 'deepgram'"
+        default="deepgram",
+        description="STT provider: 'openai', 'openrouter', or 'deepgram'",
     )
     openai_api_key: str = Field(default="", description="OpenAI API key")
+    openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     deepgram_api_key: str = Field(default="", description="Deepgram API key")
     stt_model: str = Field(default="nova-3", description="STT model name")
 
     # Text refinement settings
     refinement_provider: str = Field(
         default="cerebras",
-        description="Text refinement provider: 'openai', 'cerebras', or 'gemini'",
+        description="Text refinement provider: 'openai', 'openrouter', 'cerebras', 'gemini', or 'custom'",
     )
     refinement_model: str = Field(
         default="llama-3.3-70b", description="Model for text refinement"
@@ -103,18 +105,20 @@ class PushToTalkConfig(BaseModel):
     @field_validator("stt_provider")
     @classmethod
     def validate_stt_provider(cls, v: str) -> str:
-        """Validate STT provider is either 'openai' or 'deepgram'."""
-        if v not in ["openai", "deepgram"]:
-            raise ValueError(f"stt_provider must be 'openai' or 'deepgram', got '{v}'")
+        """Validate the supported speech-to-text providers."""
+        if v not in ["openai", "openrouter", "deepgram"]:
+            raise ValueError(
+                f"stt_provider must be 'openai', 'openrouter', or 'deepgram', got '{v}'"
+            )
         return v
 
     @field_validator("refinement_provider")
     @classmethod
     def validate_refinement_provider(cls, v: str) -> str:
         """Validate refinement provider."""
-        if v not in ["openai", "cerebras", "gemini", "custom"]:
+        if v not in ["openai", "openrouter", "cerebras", "gemini", "custom"]:
             raise ValueError(
-                f"refinement_provider must be 'openai', 'cerebras', 'gemini' or 'custom', got '{v}'"
+                f"refinement_provider must be 'openai', 'openrouter', 'cerebras', 'gemini' or 'custom', got '{v}'"
             )
         return v
 
@@ -220,6 +224,14 @@ class PushToTalkApp:
                     raise ConfigurationError(
                         "OpenAI API key is required. Set OPENAI_API_KEY environment variable or provide in config."
                     )
+        elif self.config.stt_provider == "openrouter":
+            self.config.openrouter_api_key = (
+                self.config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
+            )
+            if not self.config.openrouter_api_key:
+                raise ConfigurationError(
+                    "OpenRouter API key is required. Paste it into the OpenRouter API Key field or set OPENROUTER_API_KEY."
+                )
         elif self.config.stt_provider == "deepgram":
             if not self.config.deepgram_api_key:
                 self.config.deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
@@ -360,6 +372,8 @@ class PushToTalkApp:
         # Get the appropriate API key based on provider
         if self.config.stt_provider == "openai":
             api_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY")
+        elif self.config.stt_provider == "openrouter":
+            api_key = self.config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
         elif self.config.stt_provider == "deepgram":
             api_key = self.config.deepgram_api_key or os.getenv("DEEPGRAM_API_KEY")
         else:
@@ -381,6 +395,10 @@ class PushToTalkApp:
             # Get the appropriate API key based on provider
             if self.config.refinement_provider == "openai":
                 api_key = self.config.openai_api_key or None
+            elif self.config.refinement_provider == "openrouter":
+                api_key = self.config.openrouter_api_key or os.getenv(
+                    "OPENROUTER_API_KEY"
+                )
             elif self.config.refinement_provider == "cerebras":
                 api_key = self.config.cerebras_api_key or None
             elif self.config.refinement_provider == "gemini":
@@ -825,6 +843,10 @@ class PushToTalkApp:
                 # Get the appropriate API key based on provider
                 if self.config.refinement_provider == "openai":
                     api_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY")
+                elif self.config.refinement_provider == "openrouter":
+                    api_key = self.config.openrouter_api_key or os.getenv(
+                        "OPENROUTER_API_KEY"
+                    )
                 elif self.config.refinement_provider == "cerebras":
                     api_key = self.config.cerebras_api_key or os.getenv(
                         "CEREBRAS_API_KEY"

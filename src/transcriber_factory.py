@@ -1,6 +1,7 @@
 from typing import List, Optional
 from src.transcription_base import TranscriberBase
 from src.transcription_openai import OpenAITranscriber
+from src.transcription_openrouter import OpenRouterTranscriber
 from src.transcription_deepgram import DeepgramTranscriber
 
 
@@ -18,7 +19,7 @@ class TranscriberFactory:
         Create and return a transcriber instance.
 
         Args:
-            provider: The transcription provider ("openai" or "deepgram")
+            provider: The transcription provider ("openai", "openrouter", or "deepgram")
             api_key: API key for the selected provider
             model: Model name to use for transcription
             glossary: Optional list of custom terms for improved recognition
@@ -31,6 +32,8 @@ class TranscriberFactory:
         """
         if provider == "openai":
             transcriber = OpenAITranscriber(api_key=api_key, model=model)
+        elif provider == "openrouter":
+            transcriber = OpenRouterTranscriber(api_key=api_key, model=model)
         elif provider == "deepgram":
             transcriber = DeepgramTranscriber(api_key=api_key, model=model)
         else:
