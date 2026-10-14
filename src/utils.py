@@ -21,6 +21,14 @@ def initialize_audio_feedback():
         from src.audio_feedback import AudioFeedbackPlayer
 
         _feedback_player = AudioFeedbackPlayer([_START_SOUND_PATH, _STOP_SOUND_PATH])
+        if (
+            not _feedback_player.started.wait(timeout=5)
+            or not _feedback_player.ready.is_set()
+        ):
+            error = _feedback_player.error or "Audio device initialization timed out"
+            _feedback_player.close()
+            _feedback_player = None
+            raise RuntimeError(f"Could not initialize Windows chime output: {error}")
 
 
 def shutdown_audio_feedback():
@@ -31,19 +39,13 @@ def shutdown_audio_feedback():
 
 
 def _play_feedback(path):
-    if _feedback_player is not None and _feedback_player.play(path):
-        return
     if sys.platform == "win32":
-        import winsound
-
-        # Use Windows' native asynchronous WAV player for these short chimes.
-        winsound.PlaySound(
-            str(path),
-            winsound.SND_FILENAME
-            | winsound.SND_ASYNC
-            | winsound.SND_NODEFAULT
-            | getattr(winsound, "SND_SYSTEM", 0x00200000),
-        )
+        if _feedback_player is None:
+            initialize_audio_feedback()
+        if not _feedback_player.play(path):
+            raise RuntimeError(
+                "Windows chime output is unavailable. Reconnect the output device and restart the application."
+            )
     else:
         playsound(str(path), block=False)
 

@@ -1,43 +1,17 @@
+> **Fork changes:** This fork adds OpenRouter as a first-class speech-to-text and optional text-refinement provider, with its own API-key field, environment variable, editable model slugs, credential checks, and saved configuration. Speech-to-text supports `openai/gpt-transcribe` through OpenRouter's multipart JSON endpoint.
+>
+> Windows recording and feedback now use shared WASAPI at the devices' native formats. Original Siri-style two-note chimes play through a persistent output stream, and capture transitions finish before each chime. Safe callback recording, explicit per-thread COM initialization, serialized PortAudio startup, and startup readiness checks fix the recording shutdown race and the failed feedback initialization that caused missing or glitchy sounds. The old Windows chime fallback was removed after testing. Native crash diagnostics are logged locally.
+>
+> This fork also includes a double-click Windows launcher, corrected standalone build paths, a screen-sized configuration window, and regression tests. The launcher can use the built executable or a local Python environment. F13 can be mapped by a separate Cheerdots mouse bridge; Ctrl+Alt+Space is an optional recording toggle. API keys, personal configuration, logs, and built executables stay outside Git. The upstream README below is preserved unchanged.
+
+---
+
 <p align="center">
   <img src="icon.ico" width="128" height="128" alt="PushToTalk Icon">
 </p>
 
 
 # PushToTalk - AI Refined Speech-to-Text Dictation
-
-## OpenRouter support in this fork
-
-OpenRouter is available as a speech-to-text and optional text-refinement provider.
-Select `openrouter`, paste your key into **OpenRouter API Key**, and choose a
-provider-qualified model such as `openai/gpt-transcribe`. The same key works for
-both stages. You can also supply `OPENROUTER_API_KEY` in the process environment;
-OpenRouter never falls back to an OpenAI key. Model fields accept custom slugs.
-
-For transcription, the fork uses OpenRouter's `/api/v1/audio/transcriptions`
-endpoint with an OpenAI-compatible multipart upload and `response_format=json`.
-OpenRouter's multipart endpoint ignores the glossary `prompt` parameter, so it
-is omitted. Glossary-based optional text refinement remains available.
-
-Run **Start PushToTalk.cmd** to launch the built executable, or the project's
-Python environment when running from source. API keys belong in the local
-`push_to_talk_config.json`, which is excluded from Git, or in environment variables.
-Keep personal keys out of tracked source and example configuration.
-
-To develop or rebuild this fork, run `uv sync --locked`, then
-`uv run --locked pytest tests` and `build_script\build.bat` from the repository.
-The executable is generated in `dist` and excluded from Git.
-
-Recording feedback uses original rising/falling two-note chimes inspired by
-classic voice-assistant sounds. On Windows the app keeps a shared WASAPI output
-stream ready while running, preventing display audio from repeatedly waking up
-for each short chime. If that stream cannot open, native system-notification WAV
-playback is the fallback. They are recreated tones, not extracted Apple recordings.
-Windows capture also prefers shared WASAPI and the microphone's native format;
-saved WAV headers reflect that format. The configured sample rate is used for
-the fallback input backend.
-
-See [OpenRouter's speech-to-text documentation](https://openrouter.ai/docs/guides/overview/multimodal/stt)
-and [GPT Transcribe on OpenRouter](https://openrouter.ai/openai/gpt-transcribe).
 
 ![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)
 ![License](https://img.shields.io/github/license/yixin0829/push-to-talk)
@@ -70,8 +44,8 @@ A Python application that provides push-to-talk speech-to-text functionality wit
 - **🎯 GUI Interface**: Integrated configuration control and application status monitoring in one window
 - **🔄 Live Config Sync**: GUI edits instantly push updates to the running background service—no restart required
 - **📚 Custom Glossary**: Add domain-specific terms and acronyms to improve transcription accuracy
-- **✨ Multi-Provider Text Refinement**: Improves transcription quality using OpenRouter, OpenAI GPT, Cerebras, Gemini, or custom OpenAI-compatible endpoints
-- **🤖 Multi-Provider Speech-to-Text**: Choose OpenRouter, OpenAI, or Deepgram for accurate transcription
+- **✨ Multi-Provider Text Refinement**: Improves transcription quality using OpenAI GPT, Cerebras, Gemini, or custom OpenAI-compatible endpoints
+- **🤖 Multi-Provider Speech-to-Text**: Choose between OpenAI Whisper or Deepgram for accurate transcription
 - **🎤 Push-to-Talk Recording**: Hold a customizable hotkey to record audio (platform-aware defaults)
 - **📝 Auto Text Insertion**: Automatically inserts refined text into the active window
 
@@ -235,12 +209,12 @@ The application supports both GUI and file-based configuration with automatic en
 ### API Key Management
 The application supports three ways to provide API keys (checked in this order):
 1. **GUI**: Enter API keys directly in the configuration interface (stored in `push_to_talk_config.json`)
-2. **Environment Variables**: Set `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `CEREBRAS_API_KEY`, or `GOOGLE_API_KEY`
+2. **Environment Variables**: Set `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `CEREBRAS_API_KEY`, or `GOOGLE_API_KEY`
 3. **Configuration File**: Manually edit `push_to_talk_config.json`
 
 The required API key depends on your selected providers:
-- **STT Provider**: OpenRouter requires `openrouter_api_key`, OpenAI requires `openai_api_key`, Deepgram requires `deepgram_api_key`
-- **Refinement Provider**: OpenRouter requires `openrouter_api_key`, OpenAI requires `openai_api_key`, Cerebras requires `cerebras_api_key`, Gemini requires `gemini_api_key`, Custom requires `custom_api_key`
+- **STT Provider**: OpenAI requires `openai_api_key`, Deepgram requires `deepgram_api_key`
+- **Refinement Provider**: OpenAI requires `openai_api_key`, Cerebras requires `cerebras_api_key`, Gemini requires `gemini_api_key`, Custom requires `custom_api_key`
 
 Environment variables are checked automatically if GUI or config file values are empty.
 

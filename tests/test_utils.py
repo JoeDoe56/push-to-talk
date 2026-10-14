@@ -6,20 +6,29 @@ import pytest
 from src import utils
 
 
-def test_windows_feedback_uses_native_async_player(monkeypatch):
-    import types
+def test_windows_feedback_reports_unavailable_output(monkeypatch):
+    monkeypatch.setattr(utils.sys, "platform", "win32")
+    player = MagicMock()
+    player.play.return_value = False
+    monkeypatch.setattr(utils, "_feedback_player", player)
+    with pytest.raises(RuntimeError, match="Windows chime output is unavailable"):
+        utils._play_feedback(Path("chime.wav"))
+
+
+def test_windows_feedback_fails_startup_when_device_cannot_open(monkeypatch):
+    from src import audio_feedback
 
     player = MagicMock()
-    monkeypatch.setitem(
-        utils.sys.modules,
-        "winsound",
-        types.SimpleNamespace(
-            PlaySound=player, SND_FILENAME=0x20000, SND_ASYNC=1, SND_NODEFAULT=2
-        ),
-    )
+    player.started.wait.return_value = True
+    player.ready.is_set.return_value = False
+    player.error = "Device unavailable"
     monkeypatch.setattr(utils.sys, "platform", "win32")
-    utils._play_feedback(Path("chime.wav"))
-    player.assert_called_once_with("chime.wav", 0x220003)
+    monkeypatch.setattr(utils, "_feedback_player", None)
+    monkeypatch.setattr(audio_feedback, "AudioFeedbackPlayer", lambda paths: player)
+    with pytest.raises(RuntimeError, match="Could not initialize Windows chime output"):
+        utils.initialize_audio_feedback()
+    player.close.assert_called_once()
+    assert utils._feedback_player is None
 
 
 def test_non_windows_feedback_keeps_existing_backend(monkeypatch):
@@ -31,6 +40,7 @@ def test_non_windows_feedback_keeps_existing_backend(monkeypatch):
 
 
 def test_ready_output_stream_plays_without_opening_native_player(monkeypatch):
+    monkeypatch.setattr(utils.sys, "platform", "win32")
     player = MagicMock()
     player.play.return_value = True
     monkeypatch.setattr(utils, "_feedback_player", player)

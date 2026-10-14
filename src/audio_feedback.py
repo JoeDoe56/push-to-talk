@@ -22,6 +22,8 @@ class AudioFeedbackPlayer:
         self.remaining = b""
         self.lock = threading.Lock()
         self.ready = threading.Event()
+        self.started = threading.Event()
+        self.error = None
         self.closed = threading.Event()
         self.channels = 2
         self.underruns = 0
@@ -81,11 +83,12 @@ class AudioFeedbackPlayer:
                 f"Feedback output ready: {info['name']} ({rate} Hz); persistent stream"
             )
             self.ready.set()
+            self.started.set()
             self.closed.wait()
         except Exception as error:
-            logger.warning(
-                f"Persistent feedback unavailable, using native WAV fallback: {error}"
-            )
+            self.error = error
+            self.started.set()
+            logger.error(f"Windows feedback output could not start: {error}")
         finally:
             self.ready.clear()
             if stream is not None:
