@@ -615,12 +615,12 @@ class PushToTalkApp:
 
     def _do_stop_recording(self):
         """Internal method to perform stop recording actions."""
-        # Play audio feedback immediately when hotkey is released
-        if self.config.enable_audio_feedback:
-            play_stop_feedback()
-
         # Stop recording and get audio file (fast operation)
         audio_file = self.audio_recorder.stop_recording()
+
+        # Finish the capture-device transition before playing the stop chime.
+        if self.config.enable_audio_feedback:
+            play_stop_feedback()
 
         if not audio_file:
             logger.warning("No audio file to process")

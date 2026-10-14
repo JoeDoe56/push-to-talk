@@ -32,6 +32,9 @@ classic voice-assistant sounds. On Windows the app keeps a shared WASAPI output
 stream ready while running, preventing display audio from repeatedly waking up
 for each short chime. If that stream cannot open, native system-notification WAV
 playback is the fallback. They are recreated tones, not extracted Apple recordings.
+Windows capture also prefers shared WASAPI and the microphone's native format;
+saved WAV headers reflect that format. The configured sample rate is used for
+the fallback input backend.
 
 See [OpenRouter's speech-to-text documentation](https://openrouter.ai/docs/guides/overview/multimodal/stt)
 and [GPT Transcribe on OpenRouter](https://openrouter.ai/openai/gpt-transcribe).

@@ -38,6 +38,9 @@ class AudioRecorder:
         self._stream_lock = threading.RLock()
         self._shutting_down = False
         self._refresh_devices = False
+        self._capture_rate = sample_rate
+        self._capture_channels = channels
+        self._capture_ready = threading.Event()
 
         # Initialize PyAudio in a background thread to avoid blocking startup
         self._init_thread = threading.Thread(
@@ -107,19 +110,46 @@ class AudioRecorder:
                     raise RuntimeError(
                         "Windows selected Stereo Mix instead of a microphone. Reconnect your microphone and select it as the default input."
                     )
-            logger.info(f"Recording input: {input_info.get('name', 'system default')}")
+            input_device = input_info.get("index")
+            self._capture_rate = self.sample_rate
+            self._capture_channels = self.channels
+            if hasattr(pyaudio, "paWASAPI"):
+                try:
+                    native_device = int(
+                        self.audio_interface.get_host_api_info_by_type(
+                            pyaudio.paWASAPI
+                        )["defaultInputDevice"]
+                    )
+                    if native_device < 0:
+                        raise OSError("No default WASAPI microphone")
+                    input_info = self.audio_interface.get_device_info_by_index(
+                        native_device
+                    )
+                    if "stereo mix" in str(input_info.get("name", "")).lower():
+                        raise OSError("Default WASAPI input is loopback")
+                    input_device = native_device
+                    self._capture_rate = int(input_info["defaultSampleRate"])
+                    self._capture_channels = min(2, int(input_info["maxInputChannels"]))
+                except (OSError, ValueError):
+                    pass
+            logger.info(
+                f"Recording input: {input_info.get('name', 'system default')} ({self._capture_rate} Hz, {self._capture_channels} channel(s))"
+            )
             self.audio_data = []
+            self._capture_ready.clear()
             self.is_recording = True
             self.stream = self.audio_interface.open(
                 format=self.audio_format,
-                channels=self.channels,
-                rate=self.sample_rate,
+                channels=self._capture_channels,
+                rate=self._capture_rate,
                 input=True,
+                input_device_index=input_device,
                 frames_per_buffer=self.chunk_size,
                 stream_callback=self._audio_callback,
                 start=False,
             )
             self.stream.start_stream()
+            self._capture_ready.wait(timeout=0.15)
 
             logger.info("Audio recording started")
             return True
@@ -182,9 +212,9 @@ class AudioRecorder:
             temp_file.close()
 
             with wave.open(temp_filename, "wb") as wf:
-                wf.setnchannels(self.channels)
+                wf.setnchannels(self._capture_channels)
                 wf.setsampwidth(sample_width)
-                wf.setframerate(self.sample_rate)
+                wf.setframerate(self._capture_rate)
                 wf.writeframes(b"".join(self.audio_data))
 
             logger.info(f"Audio saved to {temp_filename}")
@@ -204,6 +234,7 @@ class AudioRecorder:
             return None, pyaudio.paComplete
         if isinstance(input_data, (bytes, bytearray)):
             self.audio_data.append(input_data)
+            self._capture_ready.set()
         return None, pyaudio.paContinue
 
     def _cleanup_stream(self):

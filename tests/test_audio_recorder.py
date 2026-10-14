@@ -13,6 +13,9 @@ class TestAudioRecorder:
 
         # Mock PyAudio at class level since it's now initialized in __init__
         self.mock_audio_interface = MagicMock()
+        self.mock_audio_interface.get_host_api_info_by_type.side_effect = OSError(
+            "Legacy-only test device"
+        )
         self.mock_pyaudio = mocker.patch("pyaudio.PyAudio")
         self.mock_pyaudio.return_value = self.mock_audio_interface
 
@@ -259,6 +262,37 @@ class TestAudioRecorder:
         assert self.recorder.start_recording() is False
         self.mock_audio_interface.open.assert_not_called()
         assert self.recorder.is_recording is False
+
+    def test_wasapi_capture_uses_native_format_and_matching_wav_header(
+        self, tmp_path, mocker
+    ):
+        self.mock_audio_interface.get_host_api_info_by_type.side_effect = None
+        self.mock_audio_interface.get_host_api_info_by_type.return_value = {
+            "defaultInputDevice": 7
+        }
+        self.mock_audio_interface.get_device_info_by_index.return_value = {
+            "name": "XREAL microphone",
+            "defaultSampleRate": 48000,
+            "maxInputChannels": 2,
+        }
+        self.mock_audio_interface.get_sample_size.return_value = 2
+        path = tmp_path / "native.wav"
+        temporary = mocker.patch("tempfile.NamedTemporaryFile")
+        temporary.return_value.name = str(path)
+        assert self.recorder.start_recording()
+        kwargs = self.mock_audio_interface.open.call_args.kwargs
+        assert kwargs["input_device_index"] == 7
+        assert kwargs["rate"] == 48000
+        assert kwargs["channels"] == 2
+        self.recorder._audio_callback(b"\x01\x00\x02\x00" * 1024, 1024, {}, 0)
+        assert self.recorder._capture_ready.is_set()
+        assert self.recorder.stop_recording() == str(path)
+        import wave
+
+        with wave.open(str(path), "rb") as recorded:
+            assert recorded.getframerate() == 48000
+            assert recorded.getnchannels() == 2
+            assert recorded.getnframes() == 1024
 
     def test_destructor_cleanup(self, mocker):
         """Test that destructor calls cleanup"""
