@@ -28,9 +28,10 @@ To develop or rebuild this fork, run `uv sync --locked`, then
 The executable is generated in `dist` and excluded from Git.
 
 Recording feedback uses original rising/falling two-note chimes inspired by
-classic voice-assistant sounds. On Windows these play through the native
-system-notification audio session, controlled by **System Sounds** in the volume
-mixer. They are recreated tones, not extracted Apple recordings.
+classic voice-assistant sounds. On Windows the app keeps a shared WASAPI output
+stream ready while running, preventing display audio from repeatedly waking up
+for each short chime. If that stream cannot open, native system-notification WAV
+playback is the fallback. They are recreated tones, not extracted Apple recordings.
 
 See [OpenRouter's speech-to-text documentation](https://openrouter.ai/docs/guides/overview/multimodal/stt)
 and [GPT Transcribe on OpenRouter](https://openrouter.ai/openai/gpt-transcribe).

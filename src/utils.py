@@ -12,9 +12,27 @@ from src.config.constants import AUDIO_DURATION_MIN_THRESHOLD_SECONDS
 _ASSETS_DIR = Path(__file__).parent / "assets" / "audio"
 _START_SOUND_PATH = _ASSETS_DIR / "start_feedback.wav"
 _STOP_SOUND_PATH = _ASSETS_DIR / "stop_feedback.wav"
+_feedback_player = None
+
+
+def initialize_audio_feedback():
+    global _feedback_player
+    if sys.platform == "win32" and _feedback_player is None:
+        from src.audio_feedback import AudioFeedbackPlayer
+
+        _feedback_player = AudioFeedbackPlayer([_START_SOUND_PATH, _STOP_SOUND_PATH])
+
+
+def shutdown_audio_feedback():
+    global _feedback_player
+    if _feedback_player is not None:
+        _feedback_player.close()
+        _feedback_player = None
 
 
 def _play_feedback(path):
+    if _feedback_player is not None and _feedback_player.play(path):
+        return
     if sys.platform == "win32":
         import winsound
 

@@ -30,6 +30,56 @@ def test_non_windows_feedback_keeps_existing_backend(monkeypatch):
     player.assert_called_once_with("chime.wav", block=False)
 
 
+def test_ready_output_stream_plays_without_opening_native_player(monkeypatch):
+    player = MagicMock()
+    player.play.return_value = True
+    monkeypatch.setattr(utils, "_feedback_player", player)
+    fallback = MagicMock()
+    monkeypatch.setattr(utils, "playsound", fallback)
+    utils._play_feedback(Path("chime.wav"))
+    player.play.assert_called_once_with(Path("chime.wav"))
+    fallback.assert_not_called()
+
+
+def test_feedback_callback_preserves_chimes_and_pads_silence():
+    from src.audio_feedback import AudioFeedbackPlayer
+    from collections import deque
+    import threading
+    import pyaudio
+
+    player = AudioFeedbackPlayer.__new__(AudioFeedbackPlayer)
+    player.channels = 1
+    player.pending = deque([b"\x01\x00\x02\x00", b"\x03\x00\x04\x00"])
+    player.remaining = b""
+    player.lock = threading.Lock()
+    player.closed = threading.Event()
+    player.underruns = 0
+    assert player._callback(None, 3, {}, 0) == (
+        b"\x01\x00\x02\x00\x03\x00",
+        pyaudio.paContinue,
+    )
+    assert player._callback(None, 3, {}, 0) == (
+        b"\x04\x00\x00\x00\x00\x00",
+        pyaudio.paContinue,
+    )
+    player.closed.set()
+    assert player._callback(None, 3, {}, 0) == (b"\x00" * 6, pyaudio.paComplete)
+
+
+def test_feedback_resampling_preserves_channels_and_duration():
+    from src.audio_feedback import AudioFeedbackPlayer
+
+    player = AudioFeedbackPlayer.__new__(AudioFeedbackPlayer)
+    player.channels = 2
+    stereo = player._load_sound(utils._START_SOUND_PATH, 48000)
+    assert len(stereo) == round(0.38 * 48000) * 2 * 2
+    from array import array
+
+    samples = array("h", stereo)
+    assert samples[0::2] == samples[1::2]
+    assert max(abs(sample) for sample in samples) < 32767
+
+
 @pytest.fixture
 def mock_logger(monkeypatch):
     """Provide a mock logger to capture warnings and errors."""

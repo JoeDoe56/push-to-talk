@@ -17,6 +17,7 @@ from src.gui.prompt_section import PromptSection
 from src.gui.status_section import StatusSection
 from src.gui.validators import validate_configuration
 from src.gui.config_persistence import ConfigurationPersistence
+from src.utils import initialize_audio_feedback, shutdown_audio_feedback
 
 
 class ConfigurationWindow:
@@ -432,6 +433,8 @@ Configure your settings below, then click "Start Application" to begin:"""
 
             # Create app instance
             self.app_instance = PushToTalkApp(self.config)
+            if self.config.enable_audio_feedback:
+                initialize_audio_feedback()
 
             # Start application in separate thread
             self.app_thread = threading.Thread(
@@ -485,6 +488,7 @@ Configure your settings below, then click "Start Application" to begin:"""
             if self.app_instance:
                 # Stop the application
                 self.app_instance.stop()
+                shutdown_audio_feedback()
                 logger.info("Application stopped by user")
 
             # Update UI state
