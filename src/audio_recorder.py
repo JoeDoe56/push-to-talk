@@ -4,6 +4,12 @@ import threading
 import tempfile
 from typing import Optional
 from loguru import logger
+from src.audio_runtime import (
+    create_audio_interface,
+    terminate_audio_interface,
+    initialize_audio_thread,
+    release_audio_thread,
+)
 
 
 class AudioRecorder:
@@ -51,15 +57,17 @@ class AudioRecorder:
     def _initialize_audio_interface(self):
         """Initialize PyAudio interface in background."""
         try:
-            interface = pyaudio.PyAudio()
+            interface = create_audio_interface()
             if self._shutting_down:
-                interface.terminate()
+                terminate_audio_interface(interface)
                 return
             self.audio_interface = interface
             logger.debug("PyAudio initialized successfully in background")
         except Exception as e:
             self._init_error = e
             logger.error(f"Failed to initialize PyAudio: {e}")
+        finally:
+            release_audio_thread()
 
     def start_recording(self) -> bool:
         """Start recording audio."""
@@ -67,6 +75,7 @@ class AudioRecorder:
             return self._start_recording()
 
     def _start_recording(self) -> bool:
+        initialize_audio_thread()
         if self._shutting_down:
             return False
         if self.is_recording:
@@ -93,18 +102,18 @@ class AudioRecorder:
             # Refresh cached endpoints after an unplugged microphone made Windows
             # fall back to loopback capture. Never silently dictate desktop audio.
             if self._refresh_devices:
-                self.audio_interface.terminate()
-                self.audio_interface = pyaudio.PyAudio()
+                terminate_audio_interface(self.audio_interface)
+                self.audio_interface = create_audio_interface()
                 self._refresh_devices = False
             try:
                 input_info = self.audio_interface.get_default_input_device_info()
             except OSError:
-                self.audio_interface.terminate()
-                self.audio_interface = pyaudio.PyAudio()
+                terminate_audio_interface(self.audio_interface)
+                self.audio_interface = create_audio_interface()
                 input_info = self.audio_interface.get_default_input_device_info()
             if "stereo mix" in str(input_info.get("name", "")).lower():
-                self.audio_interface.terminate()
-                self.audio_interface = pyaudio.PyAudio()
+                terminate_audio_interface(self.audio_interface)
+                self.audio_interface = create_audio_interface()
                 input_info = self.audio_interface.get_default_input_device_info()
                 if "stereo mix" in str(input_info.get("name", "")).lower():
                     raise RuntimeError(
@@ -270,7 +279,7 @@ class AudioRecorder:
 
         try:
             if self.audio_interface:
-                self.audio_interface.terminate()
+                terminate_audio_interface(self.audio_interface)
                 self.audio_interface = None
         except Exception as e:
             logger.error(f"Error during audio interface shutdown: {e}")

@@ -1,8 +1,39 @@
 import pytest
+import threading
 from loguru import logger
 from unittest.mock import MagicMock
 
 from src.audio_recorder import AudioRecorder
+
+
+def test_windows_audio_thread_initializes_com_once_and_balances_release(monkeypatch):
+    import ctypes
+    from src import audio_runtime
+
+    ole32 = MagicMock()
+    ole32.CoInitializeEx.return_value = 0
+    monkeypatch.setattr(audio_runtime.sys, "platform", "win32")
+    monkeypatch.setattr(audio_runtime, "_thread_context", threading.local())
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name: ole32, raising=False)
+    audio_runtime.initialize_audio_thread()
+    audio_runtime.initialize_audio_thread()
+    ole32.CoInitializeEx.assert_called_once_with(None, 0)
+    audio_runtime.release_audio_thread()
+    ole32.CoUninitialize.assert_called_once()
+
+
+def test_windows_audio_preserves_an_existing_com_apartment(monkeypatch):
+    import ctypes
+    from src import audio_runtime
+
+    ole32 = MagicMock()
+    ole32.CoInitializeEx.return_value = -2147417850
+    monkeypatch.setattr(audio_runtime.sys, "platform", "win32")
+    monkeypatch.setattr(audio_runtime, "_thread_context", threading.local())
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name: ole32, raising=False)
+    audio_runtime.initialize_audio_thread()
+    audio_runtime.release_audio_thread()
+    ole32.CoUninitialize.assert_not_called()
 
 
 class TestAudioRecorder:

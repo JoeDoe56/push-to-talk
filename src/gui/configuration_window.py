@@ -432,9 +432,9 @@ Configure your settings below, then click "Start Application" to begin:"""
             from src.push_to_talk import PushToTalkApp
 
             # Create app instance
-            self.app_instance = PushToTalkApp(self.config)
             if self.config.enable_audio_feedback:
                 initialize_audio_feedback()
+            self.app_instance = PushToTalkApp(self.config)
 
             # Start application in separate thread
             self.app_thread = threading.Thread(

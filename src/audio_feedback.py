@@ -7,6 +7,11 @@ import wave
 
 import pyaudio
 from loguru import logger
+from src.audio_runtime import (
+    create_audio_interface,
+    terminate_audio_interface,
+    release_audio_thread,
+)
 
 
 class AudioFeedbackPlayer:
@@ -46,7 +51,7 @@ class AudioFeedbackPlayer:
         interface = None
         stream = None
         try:
-            interface = pyaudio.PyAudio()
+            interface = create_audio_interface()
             try:
                 device = interface.get_host_api_info_by_type(pyaudio.paWASAPI)[
                     "defaultOutputDevice"
@@ -90,7 +95,8 @@ class AudioFeedbackPlayer:
                 except Exception as error:
                     logger.warning(f"Feedback output cleanup failed: {error}")
             if interface is not None:
-                interface.terminate()
+                terminate_audio_interface(interface)
+            release_audio_thread()
 
     def _callback(self, input_data, frame_count, time_info, status_flags):
         if self.closed.is_set():
