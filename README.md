@@ -2,7 +2,7 @@
 >
 > Windows recording and feedback now use shared WASAPI at the devices' native formats. Original Siri-style two-note chimes play through a persistent output stream, and capture transitions finish before each chime. Safe callback recording, explicit per-thread COM initialization, serialized PortAudio startup, and startup readiness checks fix the recording shutdown race and the failed feedback initialization that caused missing or glitchy sounds. The old Windows chime fallback was removed after testing. Native crash diagnostics are logged locally.
 >
-> This fork also includes a double-click Windows launcher, corrected standalone build paths, a screen-sized configuration window, and regression tests. The launcher can use the built executable or a local Python environment. F13 can be mapped by a separate Cheerdots mouse bridge; Ctrl+Alt+Space is an optional recording toggle. API keys, personal configuration, logs, and built executables stay outside Git. The upstream README below is preserved unchanged.
+> This fork also includes a double-click Windows launcher, corrected standalone build paths, a screen-sized configuration window, and regression tests. The launcher can use the built executable or a local Python environment. The upstream README below is preserved unchanged.
 
 ---
 
